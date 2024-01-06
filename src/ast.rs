@@ -6,7 +6,7 @@ use crate::token::Token;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Statement {
-    Let(Expression, Expression),
+    Let { name: Expression, value: Expression },
     Return(Expression),
 }
 

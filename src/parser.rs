@@ -87,7 +87,7 @@ impl Parser {
         // TODO: build a fake expression value for now
         let value = Expression::Identifier(Token::Ident("TODO".to_string()));
 
-        let let_statement = Statement::Let(ident, value);
+        let let_statement = Statement::Let { name: ident, value };
 
         Ok(let_statement)
     }
@@ -169,7 +169,7 @@ mod tests {
 
     fn assert_let_statement(statement: &Statement, expected_name: &str) {
         let (name, value) = match statement {
-            Statement::Let(name, value) => (name, value),
+            Statement::Let { name, value } => (name, value),
             _ => panic!("expected let statement, found {statement}"),
         };
 
