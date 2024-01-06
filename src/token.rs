@@ -1,4 +1,4 @@
-use std::{error::Error, fmt};
+use std::fmt;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Token {
@@ -44,13 +44,13 @@ impl Token {
         std::mem::discriminant(self) == std::mem::discriminant(other)
     }
 
-    pub fn inner(&self) -> Result<&String, Box<dyn Error>> {
+    pub fn inner(&self) -> Option<&String> {
         match self {
-            Token::Ident(value) => Ok(value),
-            Token::Int(value) => Ok(value),
-            Token::String(value) => Ok(value),
-            Token::Illegal(value) => Ok(value),
-            _ => Err(format!("no inner value found for {self}"))?,
+            Token::Ident(value) => Some(value),
+            Token::Int(value) => Some(value),
+            Token::String(value) => Some(value),
+            Token::Illegal(value) => Some(value),
+            _ => None,
         }
     }
 }

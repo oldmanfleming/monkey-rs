@@ -3,7 +3,7 @@
 use std::error::Error;
 
 use crate::{
-    ast::{Identifier, LetStatement, Statement},
+    ast::{Expression, Statement},
     lexer::Lexer,
     token::Token,
 };
@@ -25,8 +25,8 @@ impl Parser {
         &self.cur_token
     }
 
-    fn parse_program(&mut self) -> Result<Vec<Box<dyn Statement>>, Box<dyn Error>> {
-        let mut program: Vec<Box<dyn Statement>> = Vec::new();
+    fn parse_program(&mut self) -> Result<Vec<Statement>, Box<dyn Error>> {
+        let mut program: Vec<Statement> = Vec::new();
         while self.cur_token.is_some() {
             let statement = self.parse_statement()?;
             program.push(statement);
@@ -35,10 +35,10 @@ impl Parser {
         Ok(program)
     }
 
-    fn parse_statement(&mut self) -> Result<Box<dyn Statement>, Box<dyn Error>> {
+    fn parse_statement(&mut self) -> Result<Statement, Box<dyn Error>> {
         let token = self.parse_token()?;
         match token {
-            Token::Let => self.parse_let_statement(token),
+            Token::Let => self.parse_let_statement(),
             _ => Err(format!("unimplemented token: {token}"))?,
         }
     }
@@ -63,34 +63,20 @@ impl Parser {
         token
     }
 
-    // TODO: Work on this
-    // fn parse_token_expect(&mut self, expected_token: Token) -> Result<Token, Box<dyn Error>> {
-    //     let token = self.parse_token()?;
-    //     if !token.variant_eq(&expected_token) {
-    //         Err(format!("expected {expected_token}, found {token}"))?;
-    //     }
-    //     Ok(token)
-    // }
-
-    //TODO: use parse_token_expect? kind of annoying to have to construct the variants that have
-    //values with dummy values
-    fn parse_let_statement(
-        &mut self,
-        let_token: Token,
-    ) -> Result<Box<dyn Statement>, Box<dyn Error>> {
-        let ident_token = self.parse_token()?;
-
-        match ident_token.clone() {
-            Token::Ident(_) => (),
-            token => return Err(format!("expected identifier, found {token}"))?,
-        };
-
-        let ident = Identifier::new(ident_token);
-
-        match self.parse_token()? {
-            Token::Assign => (),
-            token => return Err(format!("expected assign, found {token}"))?,
+    fn parse_token_expect(&mut self, expected_token: Token) -> Result<Token, Box<dyn Error>> {
+        let token = self.parse_token()?;
+        if !token.variant_eq(&expected_token) {
+            Err(format!("expected {expected_token}, found {token}"))?;
         }
+        Ok(token)
+    }
+
+    fn parse_let_statement(&mut self) -> Result<Statement, Box<dyn Error>> {
+        let ident_token = self.parse_token_expect(Token::Ident(String::new()))?;
+
+        let ident = Expression::Identifier(ident_token);
+
+        self.parse_token_expect(Token::Assign)?;
 
         // TODO: skip expresion for now
         while !self.cur_token_is(Token::Semicolon) {
@@ -98,17 +84,18 @@ impl Parser {
         }
 
         // TODO: build a fake expression value for now
-        let value = Box::new(Identifier::new(Token::Ident("TODO".to_string())));
+        let value = Expression::Identifier(Token::Ident("TODO".to_string()));
 
-        let let_statement = LetStatement::new(let_token, ident, value);
-        Ok(Box::new(let_statement))
+        let let_statement = Statement::LetStatement(ident, value);
+
+        Ok(let_statement)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
-        ast::{LetStatement, Node, Statement},
+        ast::{Expression, Statement},
         token::Token,
     };
 
@@ -133,7 +120,7 @@ mod tests {
                 let mut statements = program.iter();
                 for case in cases {
                     let statement = statements.next().unwrap();
-                    assert_let_statement(statement.as_ref(), case);
+                    assert_let_statement(statement, case);
                 }
                 assert_eq!(statements.len(), 0);
             }
@@ -143,18 +130,23 @@ mod tests {
         }
     }
 
-    fn get<T: std::any::Any>(statement: &dyn Node) -> &T {
-        statement.as_any().downcast_ref::<T>().unwrap()
-    }
+    fn assert_let_statement(statement: &Statement, expected_name: &str) {
+        let (name, value) = match statement {
+            Statement::LetStatement(name, value) => (name, value),
+            _ => panic!("expected let statement, found {statement}"),
+        };
 
-    fn assert_let_statement(statement: &dyn Statement, expected_name: &str) {
-        let let_statement = get::<LetStatement>(statement);
-        assert_eq!(let_statement.token(), &Token::Let);
-        assert_eq!(
-            let_statement.name().token(),
-            &Token::Ident(expected_name.to_string())
-        );
-        let value = get::<Identifier>(let_statement.value());
-        assert_eq!(value.token(), &Token::Ident("TODO".to_string()));
+        match name {
+            Expression::Identifier(token) => {
+                assert_eq!(token, &Token::Ident(expected_name.to_string()))
+            }
+            _ => panic!("expected identifier, found {name}"),
+        }
+
+        match value {
+            Expression::Identifier(token) => {
+                assert_eq!(token, &Token::Ident(String::from("TODO")));
+            }
+        }
     }
 }
