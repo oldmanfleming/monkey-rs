@@ -39,6 +39,7 @@ impl Parser {
         let token = self.parse_token()?;
         match token {
             Token::Let => self.parse_let_statement(),
+            Token::Return => self.parse_return_statement(),
             _ => Err(format!("unimplemented token: {token}"))?,
         }
     }
@@ -86,9 +87,23 @@ impl Parser {
         // TODO: build a fake expression value for now
         let value = Expression::Identifier(Token::Ident("TODO".to_string()));
 
-        let let_statement = Statement::LetStatement(ident, value);
+        let let_statement = Statement::Let(ident, value);
 
         Ok(let_statement)
+    }
+
+    fn parse_return_statement(&mut self) -> Result<Statement, Box<dyn Error>> {
+        // TODO: skip expresion for now
+        while !self.cur_token_is(Token::Semicolon) {
+            self.parse_token()?;
+        }
+
+        // TODO: build a fake expression value for now
+        let value = Expression::Identifier(Token::Ident("TODO".to_string()));
+
+        let return_statement = Statement::Return(value);
+
+        Ok(return_statement)
     }
 }
 
@@ -111,7 +126,6 @@ mod tests {
             "#,
         );
         let mut parser = Parser::new(lexer);
-
         match parser.parse_program() {
             Ok(program) => {
                 assert_eq!(program.len(), 3);
@@ -130,9 +144,32 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_return_statements() {
+        let lexer = Lexer::new(
+            r#"
+                return 5;
+                return 10;
+                return 993322;
+            "#,
+        );
+        let mut parser = Parser::new(lexer);
+        match parser.parse_program() {
+            Ok(program) => {
+                assert_eq!(program.len(), 3);
+                for statement in program.iter() {
+                    assert_return_statement(statement);
+                }
+            }
+            Err(err) => {
+                panic!("parse_program() returned an error: {}", err);
+            }
+        }
+    }
+
     fn assert_let_statement(statement: &Statement, expected_name: &str) {
         let (name, value) = match statement {
-            Statement::LetStatement(name, value) => (name, value),
+            Statement::Let(name, value) => (name, value),
             _ => panic!("expected let statement, found {statement}"),
         };
 
@@ -144,6 +181,19 @@ mod tests {
         }
 
         match value {
+            Expression::Identifier(token) => {
+                assert_eq!(token, &Token::Ident(String::from("TODO")));
+            }
+        }
+    }
+
+    fn assert_return_statement(statement: &Statement) {
+        let expr = match statement {
+            Statement::Return(expression) => expression,
+            _ => panic!("expected return statement, found {statement}"),
+        };
+
+        match expr {
             Expression::Identifier(token) => {
                 assert_eq!(token, &Token::Ident(String::from("TODO")));
             }

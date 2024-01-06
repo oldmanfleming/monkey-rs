@@ -6,7 +6,8 @@ use crate::token::Token;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Statement {
-    LetStatement(Expression, Expression),
+    Let(Expression, Expression),
+    Return(Expression),
 }
 
 impl fmt::Display for Statement {
