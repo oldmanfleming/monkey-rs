@@ -1,7 +1,5 @@
 #![allow(dead_code)]
 
-use std::error::Error;
-
 use crate::{
     ast::{Expression, Program, Statement},
     lexer::Lexer,
@@ -21,7 +19,7 @@ impl Parser {
         }
     }
 
-    pub fn parse_program(&mut self) -> Result<Program, Box<dyn Error>> {
+    pub fn parse_program(&mut self) -> Result<Program, String> {
         let mut statements: Vec<Statement> = Vec::new();
         while self.cur_token.is_some() {
             let statement = self.parse_statement()?;
@@ -46,7 +44,7 @@ impl Parser {
         }
     }
 
-    fn parse_statement(&mut self) -> Result<Statement, Box<dyn Error>> {
+    fn parse_statement(&mut self) -> Result<Statement, String> {
         let token = self.parse_token()?;
         match token {
             Token::Let => self.parse_let_statement(),
@@ -55,7 +53,7 @@ impl Parser {
         }
     }
 
-    fn parse_token(&mut self) -> Result<Token, Box<dyn Error>> {
+    fn parse_token(&mut self) -> Result<Token, String> {
         let token = match self.cur_token() {
             Some(token) => Ok(token.clone()),
             None => Err("no token found")?,
@@ -64,7 +62,7 @@ impl Parser {
         token
     }
 
-    fn parse_token_expect(&mut self, expected_token: Token) -> Result<Token, Box<dyn Error>> {
+    fn parse_token_expect(&mut self, expected_token: Token) -> Result<Token, String> {
         let token = self.parse_token()?;
         if !token.variant_eq(&expected_token) {
             Err(format!("expected {expected_token}, found {token}"))?;
@@ -72,7 +70,7 @@ impl Parser {
         Ok(token)
     }
 
-    fn parse_let_statement(&mut self) -> Result<Statement, Box<dyn Error>> {
+    fn parse_let_statement(&mut self) -> Result<Statement, String> {
         let ident_token = self.parse_token_expect(Token::Ident(String::new()))?;
 
         let ident = Expression::Identifier(ident_token);
@@ -92,7 +90,7 @@ impl Parser {
         Ok(let_statement)
     }
 
-    fn parse_return_statement(&mut self) -> Result<Statement, Box<dyn Error>> {
+    fn parse_return_statement(&mut self) -> Result<Statement, String> {
         // TODO: skip expresion for now
         while !self.cur_token_is(Token::Semicolon) {
             self.parse_token()?;
