@@ -36,7 +36,7 @@ impl fmt::Display for Statement {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Expression {
-    Identifier(Token),
+    Identifier(String),
     IntegerLiteral(i64),
     Prefix {
         operator: Token,
@@ -52,10 +52,7 @@ pub enum Expression {
 impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Expression::Identifier(token) => match token {
-                Token::Ident(ident) => write!(f, "{}", ident),
-                _ => write!(f, "unimplemented token: {token}"),
-            },
+            Expression::Identifier(ident) => write!(f, "{}", ident),
             Expression::IntegerLiteral(value) => write!(f, "{}", value),
             Expression::Prefix { operator, right } => write!(f, "({}{})", operator, right),
             Expression::Infix {

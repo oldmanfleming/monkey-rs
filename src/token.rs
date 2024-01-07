@@ -40,8 +40,11 @@ pub enum Token {
 }
 
 impl Token {
-    pub fn variant_eq(&self, other: &Token) -> bool {
-        std::mem::discriminant(self) == std::mem::discriminant(other)
+    pub fn variant_eq(&self, other: Token) -> Result<Token, String> {
+        if std::mem::discriminant(self) == std::mem::discriminant(&other) {
+            return Ok(self.clone());
+        }
+        Err(format!("expected {:?}, got {:?}", other, self))
     }
 }
 

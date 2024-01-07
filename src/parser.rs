@@ -20,46 +20,16 @@ enum Precedence {
 pub struct Parser {
     lexer: Lexer,
     cur_token: Option<Token>,
+    peek_token: Option<Token>,
 }
 
 impl Parser {
     pub fn new(mut lexer: Lexer) -> Self {
         Self {
             cur_token: lexer.next_token(),
+            peek_token: lexer.next_token(),
             lexer,
         }
-    }
-
-    fn cur_token(&self) -> &Option<Token> {
-        &self.cur_token
-    }
-
-    fn next_token(&mut self) {
-        self.cur_token = self.lexer.next_token();
-    }
-
-    fn cur_token_is(&mut self, token: Token) -> bool {
-        match self.cur_token() {
-            Some(cur_token) => token.variant_eq(cur_token),
-            None => false,
-        }
-    }
-
-    fn parse_token(&mut self) -> Result<Token, String> {
-        let token = match self.cur_token() {
-            Some(token) => Ok(token.clone()),
-            None => Err("no token found")?,
-        };
-        self.next_token();
-        token
-    }
-
-    fn parse_token_expect(&mut self, expected_token: Token) -> Result<Token, String> {
-        let token = self.parse_token()?;
-        if !token.variant_eq(&expected_token) {
-            Err(format!("expected {expected_token}, found {token}"))?;
-        }
-        Ok(token)
     }
 
     pub fn parse_program(&mut self) -> Result<Program, String> {
@@ -67,108 +37,129 @@ impl Parser {
         while self.cur_token().is_some() {
             let statement = self.parse_statement()?;
             statements.push(statement);
-            self.next_token();
         }
         Ok(Program { statements })
     }
 
+    fn cur_token(&mut self) -> Option<Token> {
+        self.cur_token.clone()
+    }
+
+    fn peek_token(&mut self) -> Option<Token> {
+        self.peek_token.clone()
+    }
+
+    fn next_token(&mut self) -> &mut Self {
+        self.cur_token = self.peek_token();
+        self.peek_token = self.lexer.next_token();
+        self
+    }
+
     fn parse_statement(&mut self) -> Result<Statement, String> {
-        let token = self.parse_token()?;
-        match token {
+        match self.cur_token().ok_or("no token found")? {
             Token::Let => self.parse_let_statement(),
             Token::Return => self.parse_return_statement(),
-            _ => self.parse_expression_statement(token),
+            _ => self.parse_expression_statement(),
         }
     }
 
     fn parse_let_statement(&mut self) -> Result<Statement, String> {
-        let ident_token = self.parse_token_expect(Token::Ident(String::new()))?;
+        let name = match self
+            .next_token()
+            .cur_token()
+            .ok_or(format!("no token found"))?
+        {
+            Token::Ident(value) => Expression::Identifier(value),
+            token => Err(format!("expected identifier, found {token}"))?,
+        };
 
-        let ident = Expression::Identifier(ident_token);
-
-        self.parse_token_expect(Token::Assign)?;
-
-        // TODO: skip expresion for now
-        while !self.cur_token_is(Token::Semicolon) {
-            self.parse_token()?;
+        match self
+            .next_token()
+            .cur_token()
+            .ok_or(format!("no token found"))?
+        {
+            Token::Assign => (),
+            token => Err(format!("expected assign, found {token}"))?,
         }
 
-        // TODO: build a fake expression value for now
-        let value = Expression::Identifier(Token::Ident("TODO".to_string()));
+        // TODO: skip expresion for now
+        while self
+            .cur_token()
+            .is_some_and(|token| token.variant_eq(Token::Semicolon).is_err())
+        {
+            self.next_token();
+        }
+        let value = Expression::Identifier("TODO".to_string());
+        self.next_token();
+        // END TODO
 
-        let let_statement = Statement::Let { name: ident, value };
-
-        Ok(let_statement)
+        Ok(Statement::Let { name, value })
     }
 
     fn parse_return_statement(&mut self) -> Result<Statement, String> {
         // TODO: skip expresion for now
-        while !self.cur_token_is(Token::Semicolon) {
-            self.parse_token()?;
+        while self
+            .cur_token()
+            .is_some_and(|token| token.variant_eq(Token::Semicolon).is_err())
+        {
+            self.next_token();
         }
+        let value = Expression::Identifier("TODO".to_string());
+        self.next_token();
+        // END TODO
 
-        // TODO: build a fake expression value for now
-        let value = Expression::Identifier(Token::Ident("TODO".to_string()));
-
-        let return_statement = Statement::Return(value);
-
-        Ok(return_statement)
+        Ok(Statement::Return(value))
     }
 
-    fn parse_expression_statement(&mut self, token: Token) -> Result<Statement, String> {
-        let expression = self.parse_expression(token, Precedence::Lowest)?;
+    fn parse_expression_statement(&mut self) -> Result<Statement, String> {
+        let expression = self.parse_expression(Precedence::Lowest)?;
 
         let statement = Statement::Expression(expression);
 
-        if self.cur_token_is(Token::Semicolon) {
-            self.parse_token()?;
+        if self
+            .cur_token()
+            .is_some_and(|token| !token.variant_eq(Token::Semicolon).is_err())
+        {
+            self.next_token();
         }
 
         Ok(statement)
     }
 
-    // TODO: big wip...
-    fn parse_expression(
-        &mut self,
-        token: Token,
-        _precedence: Precedence,
-    ) -> Result<Expression, String> {
-        let prefix = match token.clone() {
-            Token::Ident(_) => Some(self.parse_identifier(token.clone())?),
-            Token::Int(_) => Some(self.parse_integer_literal(token.clone())?),
-            Token::Bang | Token::Minus => Some(self.parse_prefix_expression(token.clone())?),
+    // TODO: wip
+    fn parse_expression(&mut self, _precedence: Precedence) -> Result<Expression, String> {
+        let cur_token = self.cur_token().ok_or(format!("no token found"))?;
+
+        let prefix = match cur_token.clone() {
+            Token::Ident(value) => Some(self.parse_identifier(value)),
+            Token::Int(value) => Some(self.parse_integer_literal(value)?),
+            Token::Bang | Token::Minus => Some(self.parse_prefix_expression(cur_token.clone())?),
             _ => None,
         };
+
+        self.next_token();
 
         match prefix {
             Some(prefix) => Ok(prefix),
             // TODO: here we would do the infix parsing? since we don't have a prefix function for the token
-            None => Err(format!("no prefix parse function for {token}"))?,
+            None => Err(format!("no prefix parse function for {cur_token}"))?,
         }
     }
 
-    fn parse_identifier(&mut self, token: Token) -> Result<Expression, String> {
-        match token {
-            Token::Ident(_) => Ok(Expression::Identifier(token)),
-            _ => Err(format!("expected identifier, found {token}"))?,
-        }
+    fn parse_identifier(&mut self, value: String) -> Expression {
+        Expression::Identifier(value)
     }
 
-    fn parse_integer_literal(&mut self, token: Token) -> Result<Expression, String> {
-        match token {
-            Token::Int(literal) => {
-                let value = literal
-                    .parse::<i64>()
-                    .map_err(|err| format!("could not parse integer literal as i64: {err}"))?;
-                Ok(Expression::IntegerLiteral(value))
-            }
-            _ => Err(format!("expected integer literal, found {token}"))?,
-        }
+    fn parse_integer_literal(&mut self, literal: String) -> Result<Expression, String> {
+        let value = literal
+            .parse::<i64>()
+            .map_err(|err| format!("could not parse integer literal as i64: {err}"))?;
+        Ok(Expression::IntegerLiteral(value))
     }
 
     fn parse_prefix_expression(&mut self, token: Token) -> Result<Expression, String> {
-        let next_token = self.parse_token()?;
-        let right = self.parse_expression(next_token, Precedence::Prefix)?;
+        self.next_token();
+        let right = self.parse_expression(Precedence::Prefix)?;
         Ok(Expression::Prefix {
             operator: token,
             right: Box::new(right),
@@ -223,6 +214,7 @@ mod tests {
         }
     }
 
+    #[test]
     fn test_identifier_expression() {
         let program = get_program("foobar;");
         assert_eq!(program.statements.len(), 1);
@@ -353,15 +345,15 @@ mod tests {
         };
 
         match name {
-            Expression::Identifier(token) => {
-                assert_eq!(token, &Token::Ident(expected_name.to_string()))
+            Expression::Identifier(value) => {
+                assert_eq!(*value, expected_name.to_string())
             }
             _ => panic!("expected identifier, found {name}"),
         }
 
         match value {
-            Expression::Identifier(token) => {
-                assert_eq!(token, &Token::Ident(String::from("TODO")));
+            Expression::Identifier(value) => {
+                assert_eq!(*value, String::from("TODO"));
             }
             _ => panic!("expected identifier, found {value}"),
         }
@@ -374,8 +366,8 @@ mod tests {
         };
 
         match expr {
-            Expression::Identifier(token) => {
-                assert_eq!(token, &Token::Ident(String::from("TODO")));
+            Expression::Identifier(value) => {
+                assert_eq!(*value, String::from("TODO"));
             }
             _ => panic!("expected identifier, found {expr}"),
         }
@@ -388,11 +380,11 @@ mod tests {
         };
 
         match expr {
-            Expression::Identifier(token) => {
-                assert_eq!(token, &Token::Ident(String::from(expected_value)));
+            Expression::Identifier(value) => {
+                assert_eq!(*value, String::from(expected_value));
             }
             Expression::IntegerLiteral(value) => {
-                assert_eq!(value, &expected_value.parse::<i64>().unwrap());
+                assert_eq!(*value, expected_value.parse::<i64>().unwrap());
             }
             _ => panic!("expected identifier, found {expr}"),
         }
