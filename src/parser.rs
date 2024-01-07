@@ -17,6 +17,19 @@ enum Precedence {
     Call,
 }
 
+impl Precedence {
+    fn from_token(token: Token) -> Self {
+        match token {
+            Token::Eq | Token::NotEq => Precedence::Equals,
+            Token::Lt | Token::Gt => Precedence::LessGreater,
+            Token::Plus | Token::Minus => Precedence::Sum,
+            Token::Asterisk | Token::Slash => Precedence::Product,
+            Token::Lparen => Precedence::Call,
+            _ => Precedence::Lowest,
+        }
+    }
+}
+
 pub struct Parser {
     lexer: Lexer,
     cur_token: Option<Token>,
@@ -55,6 +68,18 @@ impl Parser {
         self
     }
 
+    fn peek_precedence(&mut self) -> Result<Precedence, String> {
+        Ok(Precedence::from_token(
+            self.peek_token().ok_or("no token found")?,
+        ))
+    }
+
+    fn cur_precedence(&mut self) -> Result<Precedence, String> {
+        Ok(Precedence::from_token(
+            self.cur_token().ok_or("no token found")?,
+        ))
+    }
+
     fn parse_statement(&mut self) -> Result<Statement, String> {
         match self.cur_token().ok_or("no token found")? {
             Token::Let => self.parse_let_statement(),
@@ -85,7 +110,7 @@ impl Parser {
         // TODO: skip expresion for now
         while self
             .cur_token()
-            .is_some_and(|token| token.variant_eq(Token::Semicolon).is_err())
+            .is_some_and(|token| !token.variant_eq(Token::Semicolon))
         {
             self.next_token();
         }
@@ -100,7 +125,7 @@ impl Parser {
         // TODO: skip expresion for now
         while self
             .cur_token()
-            .is_some_and(|token| token.variant_eq(Token::Semicolon).is_err())
+            .is_some_and(|token| !token.variant_eq(Token::Semicolon))
         {
             self.next_token();
         }
@@ -117,9 +142,14 @@ impl Parser {
         let statement = Statement::Expression(expression);
 
         if self
-            .cur_token()
-            .is_some_and(|token| !token.variant_eq(Token::Semicolon).is_err())
+            .peek_token()
+            .is_some_and(|token| token.variant_eq(Token::Semicolon))
         {
+            // two calls is bug?
+            // 5 + 5 ;
+            //     ^ ^
+            //     c p
+            self.next_token();
             self.next_token();
         }
 
@@ -127,23 +157,39 @@ impl Parser {
     }
 
     // TODO: wip
-    fn parse_expression(&mut self, _precedence: Precedence) -> Result<Expression, String> {
+    fn parse_expression(&mut self, precedence: Precedence) -> Result<Expression, String> {
         let cur_token = self.cur_token().ok_or(format!("no token found"))?;
 
-        let prefix = match cur_token.clone() {
-            Token::Ident(value) => Some(self.parse_identifier(value)),
-            Token::Int(value) => Some(self.parse_integer_literal(value)?),
-            Token::Bang | Token::Minus => Some(self.parse_prefix_expression(cur_token.clone())?),
-            _ => None,
+        let mut left_exp = match cur_token.clone() {
+            Token::Ident(value) => self.parse_identifier(value),
+            Token::Int(value) => self.parse_integer_literal(value)?,
+            Token::Bang | Token::Minus => self.parse_prefix_expression(cur_token)?,
+            token => Err(format!("no prefix parse function for {token}"))?,
         };
 
-        self.next_token();
+        while self
+            .peek_token()
+            .is_some_and(|token| !token.variant_eq(Token::Semicolon))
+            && precedence < self.peek_precedence()?
+        {
+            match self.peek_token().ok_or(format!("no token found"))? {
+                Token::Plus
+                | Token::Minus
+                | Token::Asterisk
+                | Token::Slash
+                | Token::Eq
+                | Token::NotEq
+                | Token::Lt
+                | Token::Gt => (),
+                _ => return Ok(left_exp),
+            };
 
-        match prefix {
-            Some(prefix) => Ok(prefix),
-            // TODO: here we would do the infix parsing? since we don't have a prefix function for the token
-            None => Err(format!("no prefix parse function for {cur_token}"))?,
+            self.next_token();
+
+            left_exp = self.parse_infix_expression(left_exp)?;
         }
+
+        Ok(left_exp)
     }
 
     fn parse_identifier(&mut self, value: String) -> Expression {
@@ -161,6 +207,18 @@ impl Parser {
         self.next_token();
         let right = self.parse_expression(Precedence::Prefix)?;
         Ok(Expression::Prefix {
+            operator: token,
+            right: Box::new(right),
+        })
+    }
+
+    fn parse_infix_expression(&mut self, left: Expression) -> Result<Expression, String> {
+        let token = self.cur_token().ok_or(format!("no token found"))?;
+        let precedence = self.cur_precedence()?;
+        self.next_token();
+        let right = self.parse_expression(precedence)?;
+        Ok(Expression::Infix {
+            left: Box::new(left),
             operator: token,
             right: Box::new(right),
         })
@@ -254,78 +312,103 @@ mod tests {
         }
     }
 
+    #[test]
+    fn parse_infix_expressions() {
+        let cases = vec![
+            (
+                "5 + 5",
+                Expression::IntegerLiteral(5),
+                Token::Plus,
+                Expression::IntegerLiteral(5),
+            ),
+            // (
+            //     "5 - 5;",
+            //     Expression::IntegerLiteral(5),
+            //     Token::Minus,
+            //     Expression::IntegerLiteral(5),
+            // ),
+            // (
+            //     "5 * 5;",
+            //     Expression::IntegerLiteral(5),
+            //     Token::Asterisk,
+            //     Expression::IntegerLiteral(5),
+            // ),
+            // (
+            //     "5 / 5;",
+            //     Expression::IntegerLiteral(5),
+            //     Token::Slash,
+            //     Expression::IntegerLiteral(5),
+            // ),
+            // (
+            //     "5 > 5;",
+            //     Expression::IntegerLiteral(5),
+            //     Token::Gt,
+            //     Expression::IntegerLiteral(5),
+            // ),
+            // (
+            //     "5 < 5;",
+            //     Expression::IntegerLiteral(5),
+            //     Token::Lt,
+            //     Expression::IntegerLiteral(5),
+            // ),
+            // (
+            //     "5 == 5;",
+            //     Expression::IntegerLiteral(5),
+            //     Token::Eq,
+            //     Expression::IntegerLiteral(5),
+            // ),
+            // (
+            //     "5 != 5;",
+            //     Expression::IntegerLiteral(5),
+            //     Token::NotEq,
+            //     Expression::IntegerLiteral(5),
+            // ),
+        ];
+        for (input, expected_left, expected_operator, expected_right) in cases {
+            let program = get_program(input);
+            assert_eq!(program.statements.len(), 1);
+            let statement = program.statements.first().unwrap();
+            let expr = match statement {
+                Statement::Expression(expression) => expression,
+                _ => panic!("expected expression statement, found {statement}"),
+            };
+            match expr {
+                Expression::Infix {
+                    left,
+                    operator,
+                    right,
+                } => {
+                    assert_eq!(**left, expected_left);
+                    assert_eq!(*operator, expected_operator);
+                    assert_eq!(**right, expected_right);
+                }
+                _ => panic!("expected infix expression, found {expr}"),
+            }
+        }
+    }
+
     // #[test]
-    // fn parse_infix_expressions() {
+    // fn test_operator_precedence_parsing() {
     //     let cases = vec![
+    //         ("-a * b", "((-a) * b)"),
+    //         ("!-a", "(!(-a))"),
+    //         ("a + b + c", "((a + b) + c)"),
+    //         ("a + b - c", "((a + b) - c)"),
+    //         ("a * b * c", "((a * b) * c)"),
+    //         ("a * b / c", "((a * b) / c)"),
+    //         ("a + b / c", "(a + (b / c))"),
+    //         ("a + b * c + d / e - f", "(((a + (b * c)) + (d / e)) - f)"),
+    //         ("3 + 4; -5 * 5", "(3 + 4)((-5) * 5)"),
+    //         ("5 > 4 == 3 < 4", "((5 > 4) == (3 < 4))"),
+    //         ("5 < 4 != 3 > 4", "((5 < 4) != (3 > 4))"),
     //         (
-    //             "5 + 5;",
-    //             Expression::IntegerLiteral(5),
-    //             Token::Plus,
-    //             Expression::IntegerLiteral(5),
-    //         ),
-    //         (
-    //             "5 - 5;",
-    //             Expression::IntegerLiteral(5),
-    //             Token::Minus,
-    //             Expression::IntegerLiteral(5),
-    //         ),
-    //         (
-    //             "5 * 5;",
-    //             Expression::IntegerLiteral(5),
-    //             Token::Asterisk,
-    //             Expression::IntegerLiteral(5),
-    //         ),
-    //         (
-    //             "5 / 5;",
-    //             Expression::IntegerLiteral(5),
-    //             Token::Slash,
-    //             Expression::IntegerLiteral(5),
-    //         ),
-    //         (
-    //             "5 > 5;",
-    //             Expression::IntegerLiteral(5),
-    //             Token::Gt,
-    //             Expression::IntegerLiteral(5),
-    //         ),
-    //         (
-    //             "5 < 5;",
-    //             Expression::IntegerLiteral(5),
-    //             Token::Lt,
-    //             Expression::IntegerLiteral(5),
-    //         ),
-    //         (
-    //             "5 == 5;",
-    //             Expression::IntegerLiteral(5),
-    //             Token::Eq,
-    //             Expression::IntegerLiteral(5),
-    //         ),
-    //         (
-    //             "5 != 5;",
-    //             Expression::IntegerLiteral(5),
-    //             Token::NotEq,
-    //             Expression::IntegerLiteral(5),
+    //             "3 + 4 * 5 == 3 * 1 + 4 * 5",
+    //             "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))",
     //         ),
     //     ];
-    //     for (input, expected_left, expected_operator, expected_right) in cases {
+    //     for (input, expected) in cases {
     //         let program = get_program(input);
-    //         assert_eq!(program.statements.len(), 1);
-    //         let statement = program.statements.first().unwrap();
-    //         let expr = match statement {
-    //             Statement::Expression(expression) => expression,
-    //             _ => panic!("expected expression statement, found {statement}"),
-    //         };
-    //         match expr {
-    //             Expression::Infix {
-    //                 left,
-    //                 operator,
-    //                 right,
-    //             } => {
-    //                 assert_eq!(**left, expected_left);
-    //                 assert_eq!(*operator, expected_operator);
-    //                 assert_eq!(**right, expected_right);
-    //             }
-    //             _ => panic!("expected infix expression, found {expr}"),
-    //         }
+    //         assert_eq!(program.to_string(), expected);
     //     }
     // }
 

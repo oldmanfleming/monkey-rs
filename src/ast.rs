@@ -11,7 +11,7 @@ pub struct Program {
 impl fmt::Display for Program {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for statement in &self.statements {
-            writeln!(f, "{}", statement)?;
+            write!(f, "{}", statement)?;
         }
         Ok(())
     }
