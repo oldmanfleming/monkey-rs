@@ -37,6 +37,16 @@ impl fmt::Display for Statement {
 #[derive(Debug, PartialEq, Clone)]
 pub enum Expression {
     Identifier(Token),
+    IntegerLiteral(i64),
+    Prefix {
+        operator: Token,
+        right: Box<Expression>,
+    },
+    Infix {
+        left: Box<Expression>,
+        operator: Token,
+        right: Box<Expression>,
+    },
 }
 
 impl fmt::Display for Expression {
@@ -46,6 +56,13 @@ impl fmt::Display for Expression {
                 Token::Ident(ident) => write!(f, "{}", ident),
                 _ => write!(f, "unimplemented token: {token}"),
             },
+            Expression::IntegerLiteral(value) => write!(f, "{}", value),
+            Expression::Prefix { operator, right } => write!(f, "({}{})", operator, right),
+            Expression::Infix {
+                left,
+                operator,
+                right,
+            } => write!(f, "({} {} {})", left, operator, right),
         }
     }
 }
