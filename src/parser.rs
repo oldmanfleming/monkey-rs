@@ -3,45 +3,36 @@
 use std::error::Error;
 
 use crate::{
-    ast::{Expression, Statement},
+    ast::{Expression, Program, Statement},
     lexer::Lexer,
     token::Token,
 };
 
-struct Parser {
+pub struct Parser {
     lexer: Lexer,
     cur_token: Option<Token>,
 }
 
 impl Parser {
-    fn new(mut lexer: Lexer) -> Self {
+    pub fn new(mut lexer: Lexer) -> Self {
         Self {
             cur_token: lexer.next_token(),
             lexer,
         }
     }
 
-    fn cur_token(&self) -> &Option<Token> {
-        &self.cur_token
-    }
-
-    fn parse_program(&mut self) -> Result<Vec<Statement>, Box<dyn Error>> {
-        let mut program: Vec<Statement> = Vec::new();
+    pub fn parse_program(&mut self) -> Result<Program, Box<dyn Error>> {
+        let mut statements: Vec<Statement> = Vec::new();
         while self.cur_token.is_some() {
             let statement = self.parse_statement()?;
-            program.push(statement);
+            statements.push(statement);
             self.next_token();
         }
-        Ok(program)
+        Ok(Program { statements })
     }
 
-    fn parse_statement(&mut self) -> Result<Statement, Box<dyn Error>> {
-        let token = self.parse_token()?;
-        match token {
-            Token::Let => self.parse_let_statement(),
-            Token::Return => self.parse_return_statement(),
-            _ => Err(format!("unimplemented token: {token}"))?,
-        }
+    fn cur_token(&self) -> &Option<Token> {
+        &self.cur_token
     }
 
     fn next_token(&mut self) {
@@ -52,6 +43,15 @@ impl Parser {
         match self.cur_token() {
             Some(cur_token) => token.variant_eq(cur_token),
             None => false,
+        }
+    }
+
+    fn parse_statement(&mut self) -> Result<Statement, Box<dyn Error>> {
+        let token = self.parse_token()?;
+        match token {
+            Token::Let => self.parse_let_statement(),
+            Token::Return => self.parse_return_statement(),
+            _ => Err(format!("unimplemented token: {token}"))?,
         }
     }
 
@@ -128,10 +128,10 @@ mod tests {
         let mut parser = Parser::new(lexer);
         match parser.parse_program() {
             Ok(program) => {
-                assert_eq!(program.len(), 3);
+                assert_eq!(program.statements.len(), 3);
 
                 let cases = vec!["x", "y", "foobar"];
-                let mut statements = program.iter();
+                let mut statements = program.statements.iter();
                 for case in cases {
                     let statement = statements.next().unwrap();
                     assert_let_statement(statement, case);
@@ -156,8 +156,8 @@ mod tests {
         let mut parser = Parser::new(lexer);
         match parser.parse_program() {
             Ok(program) => {
-                assert_eq!(program.len(), 3);
-                for statement in program.iter() {
+                assert_eq!(program.statements.len(), 3);
+                for statement in program.statements.iter() {
                     assert_return_statement(statement);
                 }
             }

@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use crate::lexer::Lexer;
+use crate::{lexer::Lexer, parser::Parser};
 
 pub fn start() {
     loop {
@@ -13,9 +13,17 @@ pub fn start() {
             .read_line(&mut input)
             .expect("Failed to read line");
 
-        let mut lexer = Lexer::new(&input);
-        while let Some(token) = lexer.next_token() {
-            println!("{}", token);
-        }
+        let lexer = Lexer::new(&input);
+        let mut parser = Parser::new(lexer);
+
+        let program = match parser.parse_program() {
+            Ok(program) => program,
+            Err(err) => {
+                println!("parse error: {}", err);
+                continue;
+            }
+        };
+
+        println!("{}", program)
     }
 }
