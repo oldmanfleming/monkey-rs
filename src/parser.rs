@@ -50,6 +50,7 @@ impl Parser {
         while self.cur_token().is_some() {
             let statement = self.parse_statement()?;
             statements.push(statement);
+            self.next_token();
         }
         Ok(Program { statements })
     }
@@ -115,7 +116,6 @@ impl Parser {
             self.next_token();
         }
         let value = Expression::Identifier("TODO".to_string());
-        self.next_token();
         // END TODO
 
         Ok(Statement::Let { name, value })
@@ -130,7 +130,6 @@ impl Parser {
             self.next_token();
         }
         let value = Expression::Identifier("TODO".to_string());
-        self.next_token();
         // END TODO
 
         Ok(Statement::Return(value))
@@ -145,18 +144,12 @@ impl Parser {
             .peek_token()
             .is_some_and(|token| token.variant_eq(Token::Semicolon))
         {
-            // two calls is bug?
-            // 5 + 5 ;
-            //     ^ ^
-            //     c p
-            self.next_token();
             self.next_token();
         }
 
         Ok(statement)
     }
 
-    // TODO: wip
     fn parse_expression(&mut self, precedence: Precedence) -> Result<Expression, String> {
         let cur_token = self.cur_token().ok_or(format!("no token found"))?;
 
@@ -316,53 +309,53 @@ mod tests {
     fn parse_infix_expressions() {
         let cases = vec![
             (
-                "5 + 5",
+                "5 + 5;",
                 Expression::IntegerLiteral(5),
                 Token::Plus,
                 Expression::IntegerLiteral(5),
             ),
-            // (
-            //     "5 - 5;",
-            //     Expression::IntegerLiteral(5),
-            //     Token::Minus,
-            //     Expression::IntegerLiteral(5),
-            // ),
-            // (
-            //     "5 * 5;",
-            //     Expression::IntegerLiteral(5),
-            //     Token::Asterisk,
-            //     Expression::IntegerLiteral(5),
-            // ),
-            // (
-            //     "5 / 5;",
-            //     Expression::IntegerLiteral(5),
-            //     Token::Slash,
-            //     Expression::IntegerLiteral(5),
-            // ),
-            // (
-            //     "5 > 5;",
-            //     Expression::IntegerLiteral(5),
-            //     Token::Gt,
-            //     Expression::IntegerLiteral(5),
-            // ),
-            // (
-            //     "5 < 5;",
-            //     Expression::IntegerLiteral(5),
-            //     Token::Lt,
-            //     Expression::IntegerLiteral(5),
-            // ),
-            // (
-            //     "5 == 5;",
-            //     Expression::IntegerLiteral(5),
-            //     Token::Eq,
-            //     Expression::IntegerLiteral(5),
-            // ),
-            // (
-            //     "5 != 5;",
-            //     Expression::IntegerLiteral(5),
-            //     Token::NotEq,
-            //     Expression::IntegerLiteral(5),
-            // ),
+            (
+                "5 - 5;",
+                Expression::IntegerLiteral(5),
+                Token::Minus,
+                Expression::IntegerLiteral(5),
+            ),
+            (
+                "5 * 5;",
+                Expression::IntegerLiteral(5),
+                Token::Asterisk,
+                Expression::IntegerLiteral(5),
+            ),
+            (
+                "5 / 5;",
+                Expression::IntegerLiteral(5),
+                Token::Slash,
+                Expression::IntegerLiteral(5),
+            ),
+            (
+                "5 > 5;",
+                Expression::IntegerLiteral(5),
+                Token::Gt,
+                Expression::IntegerLiteral(5),
+            ),
+            (
+                "5 < 5;",
+                Expression::IntegerLiteral(5),
+                Token::Lt,
+                Expression::IntegerLiteral(5),
+            ),
+            (
+                "5 == 5;",
+                Expression::IntegerLiteral(5),
+                Token::Eq,
+                Expression::IntegerLiteral(5),
+            ),
+            (
+                "5 != 5;",
+                Expression::IntegerLiteral(5),
+                Token::NotEq,
+                Expression::IntegerLiteral(5),
+            ),
         ];
         for (input, expected_left, expected_operator, expected_right) in cases {
             let program = get_program(input);
@@ -387,30 +380,30 @@ mod tests {
         }
     }
 
-    // #[test]
-    // fn test_operator_precedence_parsing() {
-    //     let cases = vec![
-    //         ("-a * b", "((-a) * b)"),
-    //         ("!-a", "(!(-a))"),
-    //         ("a + b + c", "((a + b) + c)"),
-    //         ("a + b - c", "((a + b) - c)"),
-    //         ("a * b * c", "((a * b) * c)"),
-    //         ("a * b / c", "((a * b) / c)"),
-    //         ("a + b / c", "(a + (b / c))"),
-    //         ("a + b * c + d / e - f", "(((a + (b * c)) + (d / e)) - f)"),
-    //         ("3 + 4; -5 * 5", "(3 + 4)((-5) * 5)"),
-    //         ("5 > 4 == 3 < 4", "((5 > 4) == (3 < 4))"),
-    //         ("5 < 4 != 3 > 4", "((5 < 4) != (3 > 4))"),
-    //         (
-    //             "3 + 4 * 5 == 3 * 1 + 4 * 5",
-    //             "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))",
-    //         ),
-    //     ];
-    //     for (input, expected) in cases {
-    //         let program = get_program(input);
-    //         assert_eq!(program.to_string(), expected);
-    //     }
-    // }
+    #[test]
+    fn test_operator_precedence_parsing() {
+        let cases = vec![
+            ("-a * b", "((-a) * b)"),
+            ("!-a", "(!(-a))"),
+            ("a + b + c", "((a + b) + c)"),
+            ("a + b - c", "((a + b) - c)"),
+            ("a * b * c", "((a * b) * c)"),
+            ("a * b / c", "((a * b) / c)"),
+            ("a + b / c", "(a + (b / c))"),
+            ("a + b * c + d / e - f", "(((a + (b * c)) + (d / e)) - f)"),
+            ("3 + 4; -5 * 5", "(3 + 4)((-5) * 5)"),
+            ("5 > 4 == 3 < 4", "((5 > 4) == (3 < 4))"),
+            ("5 < 4 != 3 > 4", "((5 < 4) != (3 > 4))"),
+            (
+                "3 + 4 * 5 == 3 * 1 + 4 * 5",
+                "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))",
+            ),
+        ];
+        for (input, expected) in cases {
+            let program = get_program(input);
+            assert_eq!(program.to_string(), expected);
+        }
+    }
 
     fn get_program(input: &str) -> Program {
         let lexer = Lexer::new(input);

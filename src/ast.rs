@@ -27,9 +27,9 @@ pub enum Statement {
 impl fmt::Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Statement::Let { name, value } => write!(f, "let {name} = {value};"),
-            Statement::Return(expression) => write!(f, "return {expression};"),
-            Statement::Expression(expression) => write!(f, "{expression};"),
+            Statement::Let { name, value } => write!(f, "let {name} = {value}"),
+            Statement::Return(expression) => write!(f, "return {expression}"),
+            Statement::Expression(expression) => write!(f, "{expression}"),
         }
     }
 }
@@ -52,14 +52,14 @@ pub enum Expression {
 impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Expression::Identifier(ident) => write!(f, "{}", ident),
-            Expression::IntegerLiteral(value) => write!(f, "{}", value),
-            Expression::Prefix { operator, right } => write!(f, "({}{})", operator, right),
+            Expression::Identifier(ident) => write!(f, "{ident}"),
+            Expression::IntegerLiteral(value) => write!(f, "{value}"),
+            Expression::Prefix { operator, right } => write!(f, "({operator}{right})"),
             Expression::Infix {
                 left,
                 operator,
                 right,
-            } => write!(f, "({} {} {})", left, operator, right),
+            } => write!(f, "({left} {operator} {right})"),
         }
     }
 }
