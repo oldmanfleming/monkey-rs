@@ -81,6 +81,18 @@ impl Parser {
         ))
     }
 
+    fn expect_peek(&mut self, exp_token: Token) -> Result<(), String> {
+        let peek_token = self.peek_token().ok_or(format!("no token found"))?;
+        if peek_token.variant_eq(exp_token.clone()) {
+            self.next_token();
+            Ok(())
+        } else {
+            Err(format!(
+                "expected next token to be {exp_token}, found {peek_token}",
+            ))
+        }
+    }
+
     fn parse_statement(&mut self) -> Result<Statement, String> {
         match self.cur_token().ok_or("no token found")? {
             Token::Let => self.parse_let_statement(),
@@ -99,14 +111,7 @@ impl Parser {
             token => Err(format!("expected identifier, found {token}"))?,
         };
 
-        match self
-            .next_token()
-            .cur_token()
-            .ok_or(format!("no token found"))?
-        {
-            Token::Assign => (),
-            token => Err(format!("expected assign, found {token}"))?,
-        }
+        self.expect_peek(Token::Assign)?;
 
         // TODO: skip expresion for now
         while self
@@ -159,6 +164,7 @@ impl Parser {
             Token::True | Token::False => self.parse_boolean_literal(cur_token)?,
             Token::Bang | Token::Minus => self.parse_prefix_expression(cur_token)?,
             Token::Lparen => self.parse_grouped_expression()?,
+            Token::If => self.parse_if_expression()?,
             token => Err(format!("no prefix parse function for {token}"))?,
         };
 
@@ -187,6 +193,27 @@ impl Parser {
         Ok(left_exp)
     }
 
+    fn parse_prefix_expression(&mut self, token: Token) -> Result<Expression, String> {
+        self.next_token();
+        let right = self.parse_expression(Precedence::Prefix)?;
+        Ok(Expression::Prefix {
+            operator: token,
+            right: Box::new(right),
+        })
+    }
+
+    fn parse_infix_expression(&mut self, left: Expression) -> Result<Expression, String> {
+        let token = self.cur_token().ok_or(format!("no token found"))?;
+        let precedence = self.cur_precedence()?;
+        self.next_token();
+        let right = self.parse_expression(precedence)?;
+        Ok(Expression::Infix {
+            left: Box::new(left),
+            operator: token,
+            right: Box::new(right),
+        })
+    }
+
     fn parse_identifier(&mut self, value: String) -> Expression {
         Expression::Identifier(value)
     }
@@ -210,35 +237,56 @@ impl Parser {
     fn parse_grouped_expression(&mut self) -> Result<Expression, String> {
         self.next_token();
         let exp = self.parse_expression(Precedence::Lowest)?;
-        match self
-            .next_token()
-            .cur_token()
-            .ok_or(format!("no token found"))?
+        self.expect_peek(Token::Rparen)?;
+        Ok(exp)
+    }
+
+    fn parse_if_expression(&mut self) -> Result<Expression, String> {
+        self.expect_peek(Token::Lparen)?;
+
+        self.next_token();
+
+        let condition = self.parse_expression(Precedence::Lowest)?;
+
+        self.expect_peek(Token::Rparen)?;
+
+        self.expect_peek(Token::Lbrace)?;
+
+        let consequence = self.parse_block_statement()?;
+
+        let alternative = if self
+            .peek_token()
+            .is_some_and(|token| token.variant_eq(Token::Else))
         {
-            Token::Rparen => Ok(exp),
-            token => Err(format!("expected ), found {token}"))?,
+            self.next_token();
+            self.expect_peek(Token::Lbrace)?;
+            Some(Box::new(self.parse_block_statement()?))
+        } else {
+            None
+        };
+
+        Ok(Expression::If {
+            condition: Box::new(condition),
+            consequence: Box::new(consequence),
+            alternative,
+        })
+    }
+
+    fn parse_block_statement(&mut self) -> Result<Statement, String> {
+        self.next_token();
+
+        let mut statements: Vec<Statement> = Vec::new();
+
+        while self
+            .cur_token()
+            .is_some_and(|token| !token.variant_eq(Token::Rbrace))
+        {
+            let statement = self.parse_statement()?;
+            statements.push(statement);
+            self.next_token();
         }
-    }
 
-    fn parse_prefix_expression(&mut self, token: Token) -> Result<Expression, String> {
-        self.next_token();
-        let right = self.parse_expression(Precedence::Prefix)?;
-        Ok(Expression::Prefix {
-            operator: token,
-            right: Box::new(right),
-        })
-    }
-
-    fn parse_infix_expression(&mut self, left: Expression) -> Result<Expression, String> {
-        let token = self.cur_token().ok_or(format!("no token found"))?;
-        let precedence = self.cur_precedence()?;
-        self.next_token();
-        let right = self.parse_expression(precedence)?;
-        Ok(Expression::Infix {
-            left: Box::new(left),
-            operator: token,
-            right: Box::new(right),
-        })
+        Ok(Statement::Block(statements))
     }
 }
 
@@ -484,12 +532,80 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_if_expression() {
+        let cases = vec![
+            (
+                "if (x < y) { x }",
+                Expression::Infix {
+                    left: Box::new(Expression::Identifier("x".to_string())),
+                    operator: Token::Lt,
+                    right: Box::new(Expression::Identifier("y".to_string())),
+                },
+                Statement::Block(vec![Statement::Expression(Expression::Identifier(
+                    "x".to_string(),
+                ))]),
+                None,
+            ),
+            (
+                "if (x < y) { x } else { y }",
+                Expression::Infix {
+                    left: Box::new(Expression::Identifier("x".to_string())),
+                    operator: Token::Lt,
+                    right: Box::new(Expression::Identifier("y".to_string())),
+                },
+                Statement::Block(vec![Statement::Expression(Expression::Identifier(
+                    "x".to_string(),
+                ))]),
+                Some(Statement::Block(vec![Statement::Expression(
+                    Expression::Identifier("y".to_string()),
+                )])),
+            ),
+        ];
+        for (case, exp_cond, exp_cons, exp_alt) in cases {
+            let program = get_program(case);
+            assert_eq!(program.statements.len(), 1);
+            let statement = program.statements.first().unwrap();
+
+            assert_if_else(statement, exp_cond, exp_cons, exp_alt);
+        }
+    }
+
     fn get_program(input: &str) -> Program {
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
         match parser.parse_program() {
             Ok(program) => program,
             Err(err) => panic!("parse_program() returned an error: {}", err),
+        }
+    }
+
+    fn assert_if_else(
+        statement: &Statement,
+        exp_condition: Expression,
+        exp_consequence: Statement,
+        exp_alternative: Option<Statement>,
+    ) {
+        let expr = match statement {
+            Statement::Expression(expression) => expression,
+            _ => panic!("expected expression statement, found {statement}"),
+        };
+        match expr {
+            Expression::If {
+                condition,
+                consequence,
+                alternative,
+            } => {
+                assert_eq!(**condition, exp_condition);
+                assert_eq!(**consequence, exp_consequence);
+                match exp_alternative {
+                    Some(exp_alternative) => {
+                        assert_eq!(*alternative.as_deref().unwrap(), exp_alternative)
+                    }
+                    None => assert_eq!(*alternative, None),
+                }
+            }
+            _ => panic!("expected if expression, found {expr}"),
         }
     }
 

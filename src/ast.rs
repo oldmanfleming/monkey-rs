@@ -22,6 +22,7 @@ pub enum Statement {
     Let { name: Expression, value: Expression },
     Return(Expression),
     Expression(Expression),
+    Block(Vec<Statement>),
 }
 
 impl fmt::Display for Statement {
@@ -30,6 +31,12 @@ impl fmt::Display for Statement {
             Statement::Let { name, value } => write!(f, "let {name} = {value}"),
             Statement::Return(expression) => write!(f, "return {expression}"),
             Statement::Expression(expression) => write!(f, "{expression}"),
+            Statement::Block(statements) => {
+                for statement in statements {
+                    writeln!(f, "{}", statement)?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -48,6 +55,11 @@ pub enum Expression {
         operator: Token,
         right: Box<Expression>,
     },
+    If {
+        condition: Box<Expression>,
+        consequence: Box<Statement>,
+        alternative: Option<Box<Statement>>,
+    },
 }
 
 impl fmt::Display for Expression {
@@ -62,6 +74,17 @@ impl fmt::Display for Expression {
                 operator,
                 right,
             } => write!(f, "({left} {operator} {right})"),
+            Expression::If {
+                condition,
+                consequence,
+                alternative,
+            } => {
+                write!(f, "if {condition} {{ {consequence} }}",)?;
+                if let Some(alternative) = alternative {
+                    write!(f, " else {{ {alternative} }}",)?;
+                }
+                Ok(())
+            }
         }
     }
 }
