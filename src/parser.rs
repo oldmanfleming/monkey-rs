@@ -156,6 +156,7 @@ impl Parser {
         let mut left_exp = match cur_token.clone() {
             Token::Ident(value) => self.parse_identifier(value),
             Token::Int(value) => self.parse_integer_literal(value)?,
+            Token::True | Token::False => self.parse_boolean_literal(cur_token)?,
             Token::Bang | Token::Minus => self.parse_prefix_expression(cur_token)?,
             token => Err(format!("no prefix parse function for {token}"))?,
         };
@@ -194,6 +195,15 @@ impl Parser {
             .parse::<i64>()
             .map_err(|err| format!("could not parse integer literal as i64: {err}"))?;
         Ok(Expression::IntegerLiteral(value))
+    }
+
+    fn parse_boolean_literal(&mut self, token: Token) -> Result<Expression, String> {
+        let value = match token {
+            Token::True => true,
+            Token::False => false,
+            _ => Err(format!("no boolean parse function for {token}"))?,
+        };
+        Ok(Expression::BooleanLiteral(value))
     }
 
     fn parse_prefix_expression(&mut self, token: Token) -> Result<Expression, String> {
@@ -282,10 +292,29 @@ mod tests {
     }
 
     #[test]
+    fn test_bool_expression() {
+        let program = get_program(
+            r#"
+            true;
+            false;
+        "#,
+        );
+        assert_eq!(program.statements.len(), 2);
+        let cases = vec!["true", "false"];
+        let mut statements = program.statements.iter();
+        for value in cases {
+            let statement = statements.next().unwrap();
+            assert_expression_statement(statement, value);
+        }
+    }
+
+    #[test]
     fn test_prefix_operators() {
         let cases = vec![
             ("!5;", Token::Bang, Expression::IntegerLiteral(5)),
             ("-15;", Token::Minus, Expression::IntegerLiteral(15)),
+            ("!true;", Token::Bang, Expression::BooleanLiteral(true)),
+            ("!false;", Token::Bang, Expression::BooleanLiteral(false)),
         ];
         for (input, expected_operator, expected_int) in cases {
             let program = get_program(input);
@@ -356,6 +385,24 @@ mod tests {
                 Token::NotEq,
                 Expression::IntegerLiteral(5),
             ),
+            (
+                "true == true",
+                Expression::BooleanLiteral(true),
+                Token::Eq,
+                Expression::BooleanLiteral(true),
+            ),
+            (
+                "true != false",
+                Expression::BooleanLiteral(true),
+                Token::NotEq,
+                Expression::BooleanLiteral(false),
+            ),
+            (
+                "false == false",
+                Expression::BooleanLiteral(false),
+                Token::Eq,
+                Expression::BooleanLiteral(false),
+            ),
         ];
         for (input, expected_left, expected_operator, expected_right) in cases {
             let program = get_program(input);
@@ -398,6 +445,24 @@ mod tests {
                 "3 + 4 * 5 == 3 * 1 + 4 * 5",
                 "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))",
             ),
+            ("true", "true"),
+            ("false", "false"),
+            ("3 > 5 == false", "((3 > 5) == false)"),
+            ("3 < 5 == true", "((3 < 5) == true)"),
+            // ("1 + (2 + 3) + 4", "((1 + (2 + 3)) + 4)"),
+            // ("(5 + 5) * 2", "((5 + 5) * 2)"),
+            // ("2 / (5 + 5)", "(2 / (5 + 5))"),
+            // ("-(5 + 5)", "(-(5 + 5))"),
+            // ("!(true == true)", "(!(true == true))"),
+            // ("a + add(b * c) + d", "((a + add((b * c))) + d)"),
+            // (
+            //     "add(a, b, 1, 2 * 3, 4 + 5, add(6, 7 * 8))",
+            //     "add(a, b, 1, (2 * 3), (4 + 5), add(6, (7 * 8)))",
+            // ),
+            // (
+            //     "add(a + b + c * d / f + g)",
+            //     "add((((a + b) + ((c * d) / f)) + g))",
+            // ),
         ];
         for (input, expected) in cases {
             let program = get_program(input);
@@ -461,6 +526,9 @@ mod tests {
             }
             Expression::IntegerLiteral(value) => {
                 assert_eq!(*value, expected_value.parse::<i64>().unwrap());
+            }
+            Expression::BooleanLiteral(value) => {
+                assert_eq!(*value, expected_value.parse::<bool>().unwrap());
             }
             _ => panic!("expected identifier, found {expr}"),
         }
