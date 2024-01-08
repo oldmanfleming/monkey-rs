@@ -158,6 +158,7 @@ impl Parser {
             Token::Int(value) => self.parse_integer_literal(value)?,
             Token::True | Token::False => self.parse_boolean_literal(cur_token)?,
             Token::Bang | Token::Minus => self.parse_prefix_expression(cur_token)?,
+            Token::Lparen => self.parse_grouped_expression()?,
             token => Err(format!("no prefix parse function for {token}"))?,
         };
 
@@ -204,6 +205,19 @@ impl Parser {
             _ => Err(format!("no boolean parse function for {token}"))?,
         };
         Ok(Expression::BooleanLiteral(value))
+    }
+
+    fn parse_grouped_expression(&mut self) -> Result<Expression, String> {
+        self.next_token();
+        let exp = self.parse_expression(Precedence::Lowest)?;
+        match self
+            .next_token()
+            .cur_token()
+            .ok_or(format!("no token found"))?
+        {
+            Token::Rparen => Ok(exp),
+            token => Err(format!("expected ), found {token}"))?,
+        }
     }
 
     fn parse_prefix_expression(&mut self, token: Token) -> Result<Expression, String> {
@@ -449,11 +463,11 @@ mod tests {
             ("false", "false"),
             ("3 > 5 == false", "((3 > 5) == false)"),
             ("3 < 5 == true", "((3 < 5) == true)"),
-            // ("1 + (2 + 3) + 4", "((1 + (2 + 3)) + 4)"),
-            // ("(5 + 5) * 2", "((5 + 5) * 2)"),
-            // ("2 / (5 + 5)", "(2 / (5 + 5))"),
-            // ("-(5 + 5)", "(-(5 + 5))"),
-            // ("!(true == true)", "(!(true == true))"),
+            ("1 + (2 + 3) + 4", "((1 + (2 + 3)) + 4)"),
+            ("(5 + 5) * 2", "((5 + 5) * 2)"),
+            ("2 / (5 + 5)", "(2 / (5 + 5))"),
+            ("-(5 + 5)", "(-(5 + 5))"),
+            ("!(true == true)", "(!(true == true))"),
             // ("a + add(b * c) + d", "((a + add((b * c))) + d)"),
             // (
             //     "add(a, b, 1, 2 * 3, 4 + 5, add(6, 7 * 8))",
