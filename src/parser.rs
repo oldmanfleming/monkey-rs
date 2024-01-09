@@ -165,6 +165,7 @@ impl Parser {
             Token::Bang | Token::Minus => self.parse_prefix_expression(cur_token)?,
             Token::Lparen => self.parse_grouped_expression()?,
             Token::If => self.parse_if_expression()?,
+            Token::Function => self.parse_function_literal()?,
             token => Err(format!("no prefix parse function for {token}"))?,
         };
 
@@ -181,13 +182,16 @@ impl Parser {
                 | Token::Eq
                 | Token::NotEq
                 | Token::Lt
-                | Token::Gt => (),
+                | Token::Gt => {
+                    self.next_token();
+                    left_exp = self.parse_infix_expression(left_exp)?;
+                }
+                Token::Lparen => {
+                    self.next_token();
+                    left_exp = self.parse_call_expression(left_exp)?;
+                }
                 _ => return Ok(left_exp),
             };
-
-            self.next_token();
-
-            left_exp = self.parse_infix_expression(left_exp)?;
         }
 
         Ok(left_exp)
@@ -272,6 +276,56 @@ impl Parser {
         })
     }
 
+    fn parse_function_literal(&mut self) -> Result<Expression, String> {
+        self.expect_peek(Token::Lparen)?;
+
+        let parameters = self.parse_function_parameters()?;
+
+        self.expect_peek(Token::Lbrace)?;
+
+        let body = self.parse_block_statement()?;
+
+        Ok(Expression::FunctionLiteral {
+            parameters,
+            body: Box::new(body),
+        })
+    }
+
+    fn parse_function_parameters(&mut self) -> Result<Vec<Expression>, String> {
+        let mut identifiers: Vec<Expression> = Vec::new();
+
+        if self
+            .peek_token()
+            .is_some_and(|token| token.variant_eq(Token::Rparen))
+        {
+            self.next_token();
+            return Ok(identifiers);
+        }
+
+        self.next_token();
+
+        match self.cur_token().ok_or(format!("no token found"))? {
+            Token::Ident(value) => identifiers.push(Expression::Identifier(value)),
+            token => Err(format!("expected identifier, found {token}"))?,
+        };
+
+        while self
+            .peek_token()
+            .is_some_and(|token| token.variant_eq(Token::Comma))
+        {
+            self.next_token();
+            self.next_token();
+            match self.cur_token().ok_or(format!("no token found"))? {
+                Token::Ident(value) => identifiers.push(Expression::Identifier(value)),
+                token => Err(format!("expected identifier, found {token}"))?,
+            };
+        }
+
+        self.expect_peek(Token::Rparen)?;
+
+        Ok(identifiers)
+    }
+
     fn parse_block_statement(&mut self) -> Result<Statement, String> {
         self.next_token();
 
@@ -288,11 +342,48 @@ impl Parser {
 
         Ok(Statement::Block(statements))
     }
+
+    fn parse_call_expression(&mut self, function: Expression) -> Result<Expression, String> {
+        let arguments = self.parse_call_arguments()?;
+        Ok(Expression::Call {
+            function: Box::new(function),
+            arguments,
+        })
+    }
+
+    fn parse_call_arguments(&mut self) -> Result<Vec<Expression>, String> {
+        let mut arguments: Vec<Expression> = Vec::new();
+
+        if self
+            .peek_token()
+            .is_some_and(|token| token.variant_eq(Token::Rparen))
+        {
+            self.next_token();
+            return Ok(arguments);
+        }
+
+        self.next_token();
+
+        arguments.push(self.parse_expression(Precedence::Lowest)?);
+
+        while self
+            .peek_token()
+            .is_some_and(|token| token.variant_eq(Token::Comma))
+        {
+            self.next_token();
+            self.next_token();
+            arguments.push(self.parse_expression(Precedence::Lowest)?);
+        }
+
+        self.expect_peek(Token::Rparen)?;
+
+        Ok(arguments)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::vec;
+    use std::{ops::Deref, vec};
 
     use crate::{
         ast::{Expression, Statement},
@@ -302,7 +393,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_let_statements() {
+    fn let_statements() {
         let program = get_program(
             r#"
                 let x = 5;
@@ -320,7 +411,7 @@ mod tests {
     }
 
     #[test]
-    fn test_return_statements() {
+    fn return_statements() {
         let program = get_program(
             r#"
                 return 5;
@@ -338,23 +429,31 @@ mod tests {
     }
 
     #[test]
-    fn test_identifier_expression() {
+    fn identifier_expression() {
         let program = get_program("foobar;");
         assert_eq!(program.statements.len(), 1);
         let statement = program.statements.first().unwrap();
-        assert_expression_statement(statement, "foobar");
+        let expr = match statement {
+            Statement::Expression(expression) => expression,
+            _ => panic!("expected expression statement, found {statement}"),
+        };
+        assert_identifier_expression(expr, "foobar");
     }
 
     #[test]
-    fn test_integer_literal_expression() {
+    fn integer_literal_expression() {
         let program = get_program("5;");
         assert_eq!(program.statements.len(), 1);
         let statement = program.statements.first().unwrap();
-        assert_expression_statement(statement, "5");
+        let expr = match statement {
+            Statement::Expression(expression) => expression,
+            _ => panic!("expected expression statement, found {statement}"),
+        };
+        assert_integer_literal(expr, "5");
     }
 
     #[test]
-    fn test_bool_expression() {
+    fn bool_expression() {
         let program = get_program(
             r#"
             true;
@@ -366,12 +465,16 @@ mod tests {
         let mut statements = program.statements.iter();
         for value in cases {
             let statement = statements.next().unwrap();
-            assert_expression_statement(statement, value);
+            let expr = match statement {
+                Statement::Expression(expression) => expression,
+                _ => panic!("expected expression statement, found {statement}"),
+            };
+            assert_boolean_literal(expr, value);
         }
     }
 
     #[test]
-    fn test_prefix_operators() {
+    fn prefix_operators() {
         let cases = vec![
             ("!5;", Token::Bang, Expression::IntegerLiteral(5)),
             ("-15;", Token::Minus, Expression::IntegerLiteral(15)),
@@ -397,7 +500,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_infix_expressions() {
+    fn infix_expressions() {
         let cases = vec![
             (
                 "5 + 5;",
@@ -474,23 +577,12 @@ mod tests {
                 Statement::Expression(expression) => expression,
                 _ => panic!("expected expression statement, found {statement}"),
             };
-            match expr {
-                Expression::Infix {
-                    left,
-                    operator,
-                    right,
-                } => {
-                    assert_eq!(**left, expected_left);
-                    assert_eq!(*operator, expected_operator);
-                    assert_eq!(**right, expected_right);
-                }
-                _ => panic!("expected infix expression, found {expr}"),
-            }
+            assert_infix_expression(expr, expected_left, expected_operator, expected_right);
         }
     }
 
     #[test]
-    fn test_operator_precedence_parsing() {
+    fn operator_precedence() {
         let cases = vec![
             ("-a * b", "((-a) * b)"),
             ("!-a", "(!(-a))"),
@@ -516,15 +608,15 @@ mod tests {
             ("2 / (5 + 5)", "(2 / (5 + 5))"),
             ("-(5 + 5)", "(-(5 + 5))"),
             ("!(true == true)", "(!(true == true))"),
-            // ("a + add(b * c) + d", "((a + add((b * c))) + d)"),
-            // (
-            //     "add(a, b, 1, 2 * 3, 4 + 5, add(6, 7 * 8))",
-            //     "add(a, b, 1, (2 * 3), (4 + 5), add(6, (7 * 8)))",
-            // ),
-            // (
-            //     "add(a + b + c * d / f + g)",
-            //     "add((((a + b) + ((c * d) / f)) + g))",
-            // ),
+            ("a + add(b * c) + d", "((a + add((b * c))) + d)"),
+            (
+                "add(a, b, 1, 2 * 3, 4 + 5, add(6, 7 * 8))",
+                "add(a, b, 1, (2 * 3), (4 + 5), add(6, (7 * 8)))",
+            ),
+            (
+                "add(a + b + c * d / f + g)",
+                "add((((a + b) + ((c * d) / f)) + g))",
+            ),
         ];
         for (input, expected) in cases {
             let program = get_program(input);
@@ -533,7 +625,7 @@ mod tests {
     }
 
     #[test]
-    fn test_if_expression() {
+    fn if_expression() {
         let cases = vec![
             (
                 "if (x < y) { x }",
@@ -571,12 +663,96 @@ mod tests {
         }
     }
 
+    #[test]
+    fn function_literals() {
+        let cases = vec![
+            ("fn() {};", vec![], Statement::Block(vec![])),
+            (
+                "fn (x) {};",
+                vec![Expression::Identifier("x".to_string())],
+                Statement::Block(vec![]),
+            ),
+            (
+                "fn(x, y) { x + y; }",
+                vec![
+                    Expression::Identifier("x".to_string()),
+                    Expression::Identifier("y".to_string()),
+                ],
+                Statement::Block(vec![Statement::Expression(Expression::Infix {
+                    left: Box::new(Expression::Identifier("x".to_string())),
+                    operator: Token::Plus,
+                    right: Box::new(Expression::Identifier("y".to_string())),
+                })]),
+            ),
+        ];
+        for (case, exp_params, exp_body) in cases {
+            let program = get_program(case);
+            assert_eq!(program.statements.len(), 1);
+            let statement = program.statements.first().unwrap();
+            let expr = match statement {
+                Statement::Expression(expression) => expression,
+                _ => panic!("expected expression statement, found {statement}"),
+            };
+
+            assert_function_literal(expr, exp_params, exp_body);
+        }
+    }
+
+    #[test]
+    fn call_expressions() {
+        let program = get_program("add(1, 2 * 3, 4 + 5);");
+
+        assert_eq!(program.statements.len(), 1);
+        let statement = program.statements.first().unwrap();
+        let expr = match statement {
+            Statement::Expression(expression) => expression,
+            _ => panic!("expected expression statement, found {statement}"),
+        };
+        match expr {
+            Expression::Call {
+                function,
+                arguments,
+            } => {
+                assert_identifier_expression(function.deref(), "add");
+                assert_eq!(arguments.len(), 3);
+                assert_integer_literal(&arguments[0], "1");
+                assert_infix_expression(
+                    &arguments[1],
+                    Expression::IntegerLiteral(2),
+                    Token::Asterisk,
+                    Expression::IntegerLiteral(3),
+                );
+                assert_infix_expression(
+                    &arguments[2],
+                    Expression::IntegerLiteral(4),
+                    Token::Plus,
+                    Expression::IntegerLiteral(5),
+                );
+            }
+            _ => panic!("expected call expression, found {expr}"),
+        }
+    }
+
     fn get_program(input: &str) -> Program {
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
         match parser.parse_program() {
             Ok(program) => program,
             Err(err) => panic!("parse_program() returned an error: {}", err),
+        }
+    }
+
+    fn assert_function_literal(
+        expression: &Expression,
+        expected_parameters: Vec<Expression>,
+        expected_body: Statement,
+    ) {
+        match expression {
+            Expression::FunctionLiteral { parameters, body } => {
+                assert_eq!(parameters, &expected_parameters);
+                assert_eq!(body.deref(), &expected_body);
+            }
+            _ => panic!("expected function literal, found {expression}"),
         }
     }
 
@@ -644,23 +820,50 @@ mod tests {
         }
     }
 
-    fn assert_expression_statement(statement: &Statement, expected_value: &str) {
-        let expr = match statement {
-            Statement::Expression(expression) => expression,
-            _ => panic!("expected expression statement, found {statement}"),
-        };
-
+    fn assert_infix_expression(
+        expr: &Expression,
+        expected_left: Expression,
+        expected_operator: Token,
+        expected_right: Expression,
+    ) {
         match expr {
+            Expression::Infix {
+                left,
+                operator,
+                right,
+            } => {
+                assert_eq!(**left, expected_left);
+                assert_eq!(*operator, expected_operator);
+                assert_eq!(**right, expected_right);
+            }
+            _ => panic!("expected infix expression, found {expr}"),
+        }
+    }
+
+    fn assert_identifier_expression(expression: &Expression, expected_value: &str) {
+        match expression {
             Expression::Identifier(value) => {
                 assert_eq!(*value, String::from(expected_value));
             }
+            _ => panic!("expected identifier, found {expression}"),
+        }
+    }
+
+    fn assert_integer_literal(expression: &Expression, expected_value: &str) {
+        match expression {
             Expression::IntegerLiteral(value) => {
                 assert_eq!(*value, expected_value.parse::<i64>().unwrap());
             }
+            _ => panic!("expected identifier, found {expression}"),
+        }
+    }
+
+    fn assert_boolean_literal(expression: &Expression, expected_value: &str) {
+        match expression {
             Expression::BooleanLiteral(value) => {
                 assert_eq!(*value, expected_value.parse::<bool>().unwrap());
             }
-            _ => panic!("expected identifier, found {expr}"),
+            _ => panic!("expected identifier, found {expression}"),
         }
     }
 }

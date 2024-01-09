@@ -60,6 +60,14 @@ pub enum Expression {
         consequence: Box<Statement>,
         alternative: Option<Box<Statement>>,
     },
+    FunctionLiteral {
+        parameters: Vec<Expression>,
+        body: Box<Statement>,
+    },
+    Call {
+        function: Box<Expression>,
+        arguments: Vec<Expression>,
+    },
 }
 
 impl fmt::Display for Expression {
@@ -83,6 +91,27 @@ impl fmt::Display for Expression {
                 if let Some(alternative) = alternative {
                     write!(f, " else {{ {alternative} }}",)?;
                 }
+                Ok(())
+            }
+            Expression::FunctionLiteral { parameters, body } => {
+                let params = parameters
+                    .iter()
+                    .map(|p| format!("{}", p))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                write!(f, "fn({params}) {{ {body} }}",)?;
+                Ok(())
+            }
+            Expression::Call {
+                function,
+                arguments,
+            } => {
+                let args = arguments
+                    .iter()
+                    .map(|a| format!("{}", a))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                write!(f, "{function}({args})",)?;
                 Ok(())
             }
         }
