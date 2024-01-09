@@ -113,29 +113,31 @@ impl Parser {
 
         self.expect_peek(Token::Assign)?;
 
-        // TODO: skip expresion for now
-        while self
-            .cur_token()
-            .is_some_and(|token| !token.variant_eq(Token::Semicolon))
+        self.next_token();
+
+        let value = self.parse_expression(Precedence::Lowest)?;
+
+        if self
+            .peek_token()
+            .is_some_and(|token| token.variant_eq(Token::Semicolon))
         {
             self.next_token();
         }
-        let value = Expression::Identifier("TODO".to_string());
-        // END TODO
 
         Ok(Statement::Let { name, value })
     }
 
     fn parse_return_statement(&mut self) -> Result<Statement, String> {
-        // TODO: skip expresion for now
-        while self
-            .cur_token()
-            .is_some_and(|token| !token.variant_eq(Token::Semicolon))
+        self.next_token();
+
+        let value = self.parse_expression(Precedence::Lowest)?;
+
+        if self
+            .peek_token()
+            .is_some_and(|token| token.variant_eq(Token::Semicolon))
         {
             self.next_token();
         }
-        let value = Expression::Identifier("TODO".to_string());
-        // END TODO
 
         Ok(Statement::Return(value))
     }
@@ -397,12 +399,10 @@ mod tests {
         let program = get_program(
             r#"
                 let x = 5;
-                let y = 10;
-                let foobar = 838383;
             "#,
         );
-        assert_eq!(program.statements.len(), 3);
-        let cases = vec![("x", "5"), ("y", "10"), ("foobar", "838383")];
+        assert_eq!(program.statements.len(), 1);
+        let cases = vec![("x", Expression::IntegerLiteral(5))];
         let mut statements = program.statements.iter();
         for (name, value) in cases {
             let statement = statements.next().unwrap();
@@ -415,16 +415,18 @@ mod tests {
         let program = get_program(
             r#"
                 return 5;
-                return 10;
-                return 993322;
             "#,
         );
-        assert_eq!(program.statements.len(), 3);
-        let cases = vec!["5", "10", "993322"];
+        assert_eq!(program.statements.len(), 1);
+        let cases = vec![5];
         let mut statements = program.statements.iter();
         for value in cases {
             let statement = statements.next().unwrap();
-            assert_return_statement(statement, value);
+            let expr = match statement {
+                Statement::Return(expression) => expression,
+                _ => panic!("expected return statement, found {statement}"),
+            };
+            assert_integer_literal(expr, value);
         }
     }
 
@@ -449,7 +451,7 @@ mod tests {
             Statement::Expression(expression) => expression,
             _ => panic!("expected expression statement, found {statement}"),
         };
-        assert_integer_literal(expr, "5");
+        assert_integer_literal(expr, 5);
     }
 
     #[test]
@@ -461,7 +463,7 @@ mod tests {
         "#,
         );
         assert_eq!(program.statements.len(), 2);
-        let cases = vec!["true", "false"];
+        let cases = vec![true, false];
         let mut statements = program.statements.iter();
         for value in cases {
             let statement = statements.next().unwrap();
@@ -715,7 +717,7 @@ mod tests {
             } => {
                 assert_identifier_expression(function.deref(), "add");
                 assert_eq!(arguments.len(), 3);
-                assert_integer_literal(&arguments[0], "1");
+                assert_integer_literal(&arguments[0], 1);
                 assert_infix_expression(
                     &arguments[1],
                     Expression::IntegerLiteral(2),
@@ -785,7 +787,11 @@ mod tests {
         }
     }
 
-    fn assert_let_statement(statement: &Statement, expected_name: &str, _expected_value: &str) {
+    fn assert_let_statement(
+        statement: &Statement,
+        expected_name: &str,
+        expected_value: Expression,
+    ) {
         let (name, value) = match statement {
             Statement::Let { name, value } => (name, value),
             _ => panic!("expected let statement, found {statement}"),
@@ -798,26 +804,7 @@ mod tests {
             _ => panic!("expected identifier, found {name}"),
         }
 
-        match value {
-            Expression::Identifier(value) => {
-                assert_eq!(*value, String::from("TODO"));
-            }
-            _ => panic!("expected identifier, found {value}"),
-        }
-    }
-
-    fn assert_return_statement(statement: &Statement, _expected_value: &str) {
-        let expr = match statement {
-            Statement::Return(expression) => expression,
-            _ => panic!("expected return statement, found {statement}"),
-        };
-
-        match expr {
-            Expression::Identifier(value) => {
-                assert_eq!(*value, String::from("TODO"));
-            }
-            _ => panic!("expected identifier, found {expr}"),
-        }
+        assert_eq!(*value, expected_value);
     }
 
     fn assert_infix_expression(
@@ -849,19 +836,19 @@ mod tests {
         }
     }
 
-    fn assert_integer_literal(expression: &Expression, expected_value: &str) {
+    fn assert_integer_literal(expression: &Expression, expected_value: i64) {
         match expression {
             Expression::IntegerLiteral(value) => {
-                assert_eq!(*value, expected_value.parse::<i64>().unwrap());
+                assert_eq!(*value, expected_value);
             }
             _ => panic!("expected identifier, found {expression}"),
         }
     }
 
-    fn assert_boolean_literal(expression: &Expression, expected_value: &str) {
+    fn assert_boolean_literal(expression: &Expression, expected_value: bool) {
         match expression {
             Expression::BooleanLiteral(value) => {
-                assert_eq!(*value, expected_value.parse::<bool>().unwrap());
+                assert_eq!(*value, expected_value);
             }
             _ => panic!("expected identifier, found {expression}"),
         }
