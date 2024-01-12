@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use crate::{evaluator, lexer::Lexer, parser::Parser};
+use crate::{evaluator, lexer::Lexer, object::Environment, parser::Parser};
 
 const MONKEY_FACE: &str = r#"
             __,__
@@ -17,6 +17,8 @@ const MONKEY_FACE: &str = r#"
 "#;
 
 pub fn start() {
+    let mut env = Environment::new();
+
     loop {
         print!(">>");
         io::stdout().flush().unwrap();
@@ -40,7 +42,7 @@ pub fn start() {
             }
         };
 
-        match evaluator::eval(program) {
+        match evaluator::eval(program, &mut env) {
             Ok(evaluated) => println!("{}", evaluated),
             Err(err) => {
                 println!("{}", MONKEY_FACE);

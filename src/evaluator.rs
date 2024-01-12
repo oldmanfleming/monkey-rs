@@ -2,7 +2,7 @@
 
 use crate::{
     ast::{Expression, Program, Statement},
-    object::Object,
+    object::{Environment, Object},
     token::Token,
 };
 
@@ -10,10 +10,10 @@ const TRUE: Object = Object::Boolean(true);
 const FALSE: Object = Object::Boolean(false);
 const NULL: Object = Object::Null;
 
-pub fn eval(program: Program) -> Result<Object, String> {
+pub fn eval(program: Program, env: &mut Environment) -> Result<Object, String> {
     let mut result = Object::Null;
     for statement in program.statements {
-        result = match eval_statement(statement)? {
+        result = match eval_statement(statement, env)? {
             Object::ReturnValue(value) => return Ok(*value),
             object => object,
         };
@@ -21,23 +21,40 @@ pub fn eval(program: Program) -> Result<Object, String> {
     Ok(result)
 }
 
-fn eval_statement(statement: Statement) -> Result<Object, String> {
+fn eval_statement(statement: Statement, env: &mut Environment) -> Result<Object, String> {
     let object = match statement {
-        Statement::Expression(expression) => eval_expression(expression)?,
-        Statement::Block(statements) => eval_block_statement(statements)?,
+        Statement::Expression(expression) => eval_expression(expression, env)?,
+        Statement::Block(statements) => eval_block_statement(statements, env)?,
         Statement::Return(expression) => {
-            let value = eval_expression(expression)?;
+            let value = eval_expression(expression, env)?;
             return Ok(Object::ReturnValue(Box::new(value)));
         }
-        expression_statement => Err(format!("{} not implemented", expression_statement))?,
+        Statement::Let { name, value } => eval_let_statement(value, name, env)?,
     };
     Ok(object)
 }
 
-fn eval_block_statement(statements: Vec<Statement>) -> Result<Object, String> {
+fn eval_let_statement(
+    value: Expression,
+    name: Expression,
+    env: &mut Environment,
+) -> Result<Object, String> {
+    let value = eval_expression(value, env)?;
+    let str_name = match name {
+        Expression::Identifier(name) => name,
+        _ => Err(format!("{} not implemented", name))?,
+    };
+    env.set(&str_name, value);
+    Ok(Object::Null)
+}
+
+fn eval_block_statement(
+    statements: Vec<Statement>,
+    env: &mut Environment,
+) -> Result<Object, String> {
     let mut result = Object::Null;
     for statement in statements {
-        result = eval_statement(statement)?;
+        result = eval_statement(statement, env)?;
         if let Object::ReturnValue(_) = result {
             return Ok(result);
         }
@@ -45,12 +62,12 @@ fn eval_block_statement(statements: Vec<Statement>) -> Result<Object, String> {
     Ok(result)
 }
 
-fn eval_expression(expression: Expression) -> Result<Object, String> {
+fn eval_expression(expression: Expression, env: &mut Environment) -> Result<Object, String> {
     let object = match expression {
         Expression::IntegerLiteral(value) => Object::Integer(value),
         Expression::BooleanLiteral(value) => native_bool_to_boolean_object(value),
         Expression::Prefix { operator, right } => {
-            let right = eval_expression(*right)?;
+            let right = eval_expression(*right, env)?;
             eval_prefix_expression(operator, right)?
         }
         Expression::Infix {
@@ -58,15 +75,16 @@ fn eval_expression(expression: Expression) -> Result<Object, String> {
             operator,
             right,
         } => {
-            let left = eval_expression(*left)?;
-            let right = eval_expression(*right)?;
+            let left = eval_expression(*left, env)?;
+            let right = eval_expression(*right, env)?;
             eval_infix_expression(left, operator, right)?
         }
         Expression::If {
             condition,
             consequence,
             alternative,
-        } => eval_if_expression(*condition, *consequence, alternative)?,
+        } => eval_if_expression(*condition, *consequence, alternative, env)?,
+        Expression::Identifier(name) => eval_identifier_expression(name, env)?,
         expression => Err(format!("{} not implemented", expression))?,
     };
     Ok(object)
@@ -146,12 +164,13 @@ fn eval_if_expression(
     condition: Expression,
     consequence: Statement,
     alternative: Option<Box<Statement>>,
+    env: &mut Environment,
 ) -> Result<Object, String> {
-    let condition = eval_expression(condition)?;
+    let condition = eval_expression(condition, env)?;
     if is_truthy(condition) {
-        eval_statement(consequence)
+        eval_statement(consequence, env)
     } else if let Some(alternative) = alternative {
-        eval_statement(*alternative)
+        eval_statement(*alternative, env)
     } else {
         Ok(NULL)
     }
@@ -163,6 +182,13 @@ fn is_truthy(object: Object) -> bool {
         Object::Boolean(true) => true,
         Object::Boolean(false) => false,
         _ => true,
+    }
+}
+
+fn eval_identifier_expression(name: String, env: &mut Environment) -> Result<Object, String> {
+    match env.get(&name) {
+        Some(value) => Ok(value.clone()),
+        None => Err(format!("identifier not found: {}", name)),
     }
 }
 
@@ -302,6 +328,7 @@ mod tests {
                 "if (10 > 1) { true + false; }",
                 "unknown operator: true + false",
             ),
+            ("foobar", "identifier not found: foobar"),
         ];
 
         for (input, expected) in tests {
@@ -313,17 +340,37 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_let_statements() {
+        let tests = vec![
+            ("let a = 5; a;", Object::Integer(5)),
+            ("let a = 5 * 5; a;", Object::Integer(25)),
+            ("let a = 5; let b = a; b;", Object::Integer(5)),
+            (
+                "let a = 5; let b = a; let c = a + b + 5; c;",
+                Object::Integer(15),
+            ),
+        ];
+
+        for (input, expected) in tests {
+            let evaluated = test_eval(input);
+            assert_eq!(evaluated, expected);
+        }
+    }
+
     fn test_eval(input: &str) -> Object {
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
         let program = parser.parse_program().unwrap();
-        eval(program).unwrap()
+        let mut env = Environment::new();
+        eval(program, &mut env).unwrap()
     }
 
     fn test_eval_result(input: &str) -> Result<Object, String> {
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
         let program = parser.parse_program().unwrap();
-        eval(program)
+        let mut env = Environment::new();
+        eval(program, &mut env)
     }
 }
