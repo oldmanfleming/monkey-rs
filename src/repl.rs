@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use crate::{lexer::Lexer, parser::Parser};
+use crate::{evaluator, lexer::Lexer, parser::Parser};
 
 const MONKEY_FACE: &str = r#"
             __,__
@@ -40,6 +40,14 @@ pub fn start() {
             }
         };
 
-        println!("{}", program)
+        match evaluator::eval(program) {
+            Ok(evaluated) => println!("{}", evaluated),
+            Err(err) => {
+                println!("{}", MONKEY_FACE);
+                println!("Woops! We ran into some monkey business here!");
+                println!("eval error: {}", err);
+                continue;
+            }
+        }
     }
 }
