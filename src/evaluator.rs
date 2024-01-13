@@ -85,9 +85,66 @@ fn eval_expression(expression: Expression, env: &mut Environment) -> Result<Obje
             alternative,
         } => eval_if_expression(*condition, *consequence, alternative, env)?,
         Expression::Identifier(name) => eval_identifier_expression(name, env)?,
+        Expression::FunctionLiteral { parameters, body } => {
+            eval_function_literal(parameters, body, env)?
+        }
+        Expression::Call {
+            function,
+            arguments,
+        } => eval_call_function(function, env, arguments)?,
         expression => Err(format!("{} not implemented", expression))?,
     };
     Ok(object)
+}
+
+fn eval_call_function(
+    function: Box<Expression>,
+    env: &mut Environment,
+    arguments: Vec<Expression>,
+) -> Result<Object, String> {
+    let fn_literal = eval_expression(*function, env)?;
+    let args = arguments
+        .into_iter()
+        .map(|arg| eval_expression(arg, env))
+        .collect::<Result<Vec<Object>, String>>()?;
+    Ok(match fn_literal {
+        Object::Function {
+            parameters,
+            body,
+            env: mut fn_env,
+        } => {
+            if parameters.len() != args.len() {
+                Err(format!(
+                    "wrong number of arguments: want={}, got={}",
+                    parameters.len(),
+                    args.len()
+                ))?
+            }
+            parameters.into_iter().zip(args).for_each(|(param, arg)| {
+                fn_env.set(&param, arg);
+            });
+            eval_statement(body, &mut fn_env)?
+        }
+        _ => Err(format!("{} is not a function", fn_literal))?,
+    })
+}
+
+fn eval_function_literal(
+    parameters: Vec<Expression>,
+    body: Box<Statement>,
+    env: &mut Environment,
+) -> Result<Object, String> {
+    Ok(Object::Function {
+        parameters: parameters
+            .into_iter()
+            .map(|p| match p {
+                Expression::Identifier(name) => Ok(name),
+                _ => Err(format!("{} not implemented", p)),
+            })
+            .collect::<Result<Vec<String>, String>>()?,
+        body: *body,
+        env: env.clone(),
+    })
 }
 
 fn eval_prefix_expression(operator: Token, right: Object) -> Result<Object, String> {
@@ -219,7 +276,7 @@ mod tests {
         ];
 
         for (input, expected) in tests {
-            let evaluated = test_eval(input);
+            let evaluated = test_eval(input).unwrap();
             assert_eq!(evaluated, Object::Integer(expected));
         }
     }
@@ -249,7 +306,7 @@ mod tests {
         ];
 
         for (input, expected) in tests {
-            let evaluated = test_eval(input);
+            let evaluated = test_eval(input).unwrap();
             assert_eq!(evaluated, Object::Boolean(expected));
         }
     }
@@ -266,7 +323,7 @@ mod tests {
         ];
 
         for (input, expected) in tests {
-            let evaluated = test_eval(input);
+            let evaluated = test_eval(input).unwrap();
             assert_eq!(evaluated, Object::Boolean(expected));
         }
     }
@@ -284,7 +341,7 @@ mod tests {
         ];
 
         for (input, expected) in tests {
-            let evaluated = test_eval(input);
+            let evaluated = test_eval(input).unwrap();
             assert_eq!(evaluated, expected);
         }
     }
@@ -311,7 +368,7 @@ mod tests {
         ];
 
         for (input, expected) in tests {
-            let evaluated = test_eval(input);
+            let evaluated = test_eval(input).unwrap();
             assert_eq!(evaluated, expected);
         }
     }
@@ -332,7 +389,7 @@ mod tests {
         ];
 
         for (input, expected) in tests {
-            let evaluated = test_eval_result(input);
+            let evaluated = test_eval(input);
             match evaluated {
                 Ok(_) => panic!("no error returned for {}", input),
                 Err(error) => assert_eq!(error, expected),
@@ -353,20 +410,69 @@ mod tests {
         ];
 
         for (input, expected) in tests {
-            let evaluated = test_eval(input);
+            let evaluated = test_eval(input).unwrap();
             assert_eq!(evaluated, expected);
         }
     }
 
-    fn test_eval(input: &str) -> Object {
-        let lexer = Lexer::new(input);
-        let mut parser = Parser::new(lexer);
-        let program = parser.parse_program().unwrap();
-        let mut env = Environment::new();
-        eval(program, &mut env).unwrap()
+    #[test]
+    fn test_function_objects() {
+        let tests = vec![(
+            "fn(x) { x + 2; };",
+            Object::Function {
+                parameters: vec!["x".to_string()],
+                body: Statement::Block(vec![Statement::Expression(Expression::Infix {
+                    left: Box::new(Expression::Identifier("x".to_string())),
+                    operator: Token::Plus,
+                    right: Box::new(Expression::IntegerLiteral(2)),
+                })]),
+                env: Environment::new(),
+            },
+        )];
+
+        for (input, expected) in tests {
+            let evaluated = test_eval(input).unwrap();
+            assert_eq!(evaluated, expected);
+        }
     }
 
-    fn test_eval_result(input: &str) -> Result<Object, String> {
+    #[test]
+    fn test_function_application() {
+        let tests = vec![
+            (
+                "let identity = fn(x) { x; }; identity(5);",
+                Object::Integer(5),
+            ),
+            (
+                "let identity = fn(x) { return x; }; identity(5);",
+                Object::Integer(5),
+            ),
+            (
+                "let double = fn(x) { x * 2; }; double(5);",
+                Object::Integer(10),
+            ),
+            (
+                "let add = fn(x, y) { x + y; }; add(5, 5);",
+                Object::Integer(10),
+            ),
+            (
+                "let add = fn(x, y) { x + y; }; add(5 + 5, add(5, 5));",
+                Object::Integer(20),
+            ),
+            ("fn(x) { x; }(5)", Object::Integer(5)),
+            (
+                "let i = 5; let thing = fn(i) { i + 1; }; thing(i); i;",
+                Object::Integer(5),
+            ),
+        ];
+
+        for (input, expected) in tests {
+            let evaluated = test_eval(input).unwrap();
+            assert_eq!(evaluated, expected);
+        }
+    }
+
+    fn test_eval(input: &str) -> Result<Object, String> {
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
         let program = parser.parse_program().unwrap();

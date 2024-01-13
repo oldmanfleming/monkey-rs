@@ -3,12 +3,19 @@
 use core::fmt;
 use std::collections::HashMap;
 
+use crate::ast::Statement;
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum Object {
     Integer(i64),
     Boolean(bool),
     Null,
     ReturnValue(Box<Object>),
+    Function {
+        parameters: Vec<String>,
+        body: Statement,
+        env: Environment,
+    },
 }
 
 impl fmt::Display for Object {
@@ -18,10 +25,16 @@ impl fmt::Display for Object {
             Object::Boolean(value) => write!(f, "{}", value),
             Object::Null => write!(f, "null"),
             Object::ReturnValue(value) => write!(f, "return {}", value),
+            Object::Function {
+                parameters,
+                body,
+                env: _,
+            } => write!(f, "fn({}) {{\n{}\n}}", parameters.join(", "), body),
         }
     }
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub struct Environment {
     store: HashMap<String, Object>,
 }
