@@ -161,6 +161,7 @@ impl Parser {
         let mut left_exp = match cur_token.clone() {
             Token::Ident(value) => self.parse_identifier(value),
             Token::Int(value) => self.parse_integer_literal(value)?,
+            Token::String(value) => Expression::StringLiteral(value),
             Token::True | Token::False => self.parse_boolean_literal(cur_token)?,
             Token::Bang | Token::Minus => self.parse_prefix_expression(cur_token)?,
             Token::Lparen => self.parse_grouped_expression()?,
@@ -470,6 +471,25 @@ mod tests {
                 _ => panic!("expected expression statement, found {statement}"),
             };
             assert_boolean_literal(expr, value);
+        }
+    }
+
+    #[test]
+    fn string_literals() {
+        let program = get_program(
+            r#"
+            "hello world";
+        "#,
+        );
+        assert_eq!(program.statements.len(), 1);
+        let statement = program.statements.first().unwrap();
+        let expr = match statement {
+            Statement::Expression(expression) => expression,
+            _ => panic!("expected expression statement, found {statement}"),
+        };
+        match expr {
+            Expression::StringLiteral(value) => assert_eq!(value, "hello world"),
+            _ => panic!("expected string literal, found {expr}"),
         }
     }
 

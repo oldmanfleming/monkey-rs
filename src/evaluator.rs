@@ -69,6 +69,7 @@ fn eval_expression(
 ) -> Result<Object, String> {
     let object = match expression {
         Expression::IntegerLiteral(value) => Object::Integer(value),
+        Expression::StringLiteral(value) => Object::String(value),
         Expression::BooleanLiteral(value) => native_bool_to_boolean_object(value),
         Expression::Prefix { operator, right } => {
             let right = eval_expression(*right, env)?;
@@ -184,6 +185,9 @@ fn eval_infix_expression(left: Object, operator: Token, right: Object) -> Result
         (Object::Boolean(left), Object::Boolean(right)) => {
             eval_boolean_infix_expression(left, operator, right)
         }
+        (Object::String(left), Object::String(right)) => {
+            eval_string_infix_expression(left, operator, right)
+        }
         (left, right) => Err(format!("type mismatch: {} {} {}", left, operator, right)),
     }
 }
@@ -214,6 +218,16 @@ fn eval_boolean_infix_expression(
     }
 }
 
+fn eval_string_infix_expression(
+    left: String,
+    operator: Token,
+    right: String,
+) -> Result<Object, String> {
+    match operator {
+        Token::Plus => Ok(Object::String(format!("{}{}", left, right))),
+        _ => Err(format!("unknown operator: {} {} {}", left, operator, right)),
+    }
+}
 fn native_bool_to_boolean_object(input: bool) -> Object {
     if input {
         TRUE
@@ -394,6 +408,7 @@ mod tests {
                 "unknown operator: true + false",
             ),
             ("foobar", "identifier not found: foobar"),
+            (r#""Hello" - "World""#, "unknown operator: Hello - World"),
         ];
 
         for (input, expected) in tests {
@@ -487,8 +502,25 @@ mod tests {
             (
                 "let add = fn (fun) { fun() + fun(); } let fun = fn () { 5; }; add(fun);",
                 Object::Integer(10),
+            ),
+            (
+                "let concat = fn (x) { fn (y) { x + y; }; }; concat(\"Hello \")(\"World!\");",
+                Object::String("Hello World!".to_string()),
             )
         ];
+
+        for (input, expected) in tests {
+            let evaluated = test_eval(input).unwrap();
+            assert_eq!(evaluated, expected);
+        }
+    }
+
+    #[test]
+    fn test_string_concatenation() {
+        let tests = vec![(
+            r#""Hello" + " " + "World!""#,
+            Object::String("Hello World!".to_string()),
+        )];
 
         for (input, expected) in tests {
             let evaluated = test_eval(input).unwrap();
