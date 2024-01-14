@@ -4,7 +4,10 @@ pub struct Builtins;
 
 impl Builtins {
     pub fn get() -> Vec<(String, Object)> {
-        vec![("len".to_string(), Object::BuiltInFunction(Self::len_fn))]
+        vec![
+            ("len".to_string(), Object::BuiltInFunction(Self::len_fn)),
+            ("print".to_string(), Object::BuiltInFunction(Self::print_fn)),
+        ]
     }
 
     fn len_fn(args: Vec<Object>) -> Result<Object, String> {
@@ -22,5 +25,12 @@ impl Builtins {
             Some(other) => Err(format!("argument to `len` not supported, got {}", other)),
             None => Err("argument to `len` not provided".to_string()),
         }
+    }
+
+    fn print_fn(args: Vec<Object>) -> Result<Object, String> {
+        for arg in args {
+            println!("{}", arg);
+        }
+        Ok(Object::Null)
     }
 }

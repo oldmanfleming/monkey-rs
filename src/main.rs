@@ -53,9 +53,7 @@ fn execute_file(path: PathBuf) -> Result<(), String> {
 
     let env = environment::Environment::new();
 
-    let result = evaluator::eval(program, env).map_err(|err| err.to_string())?;
-
-    println!("{}", result);
+    let _ = evaluator::eval(program, env).map_err(|err| err.to_string())?;
 
     Ok(())
 }
