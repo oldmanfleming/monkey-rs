@@ -100,7 +100,6 @@ fn eval_expression(
         Expression::ArrayLiteral(elements) => eval_array_literal(elements, env)?,
         Expression::HashLiteral(pairs) => eval_hash_literal(pairs, env)?,
         Expression::Index { left, index } => eval_index(left, index, env)?,
-        _ => Err(format!("{} not implemented", expression))?,
     };
     Ok(object)
 }
