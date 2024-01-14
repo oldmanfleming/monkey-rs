@@ -168,6 +168,7 @@ impl Parser {
             Token::Bang | Token::Minus => self.parse_prefix_expression(cur_token)?,
             Token::Lparen => self.parse_grouped_expression()?,
             Token::Lbracket => self.parse_array_literal()?,
+            Token::Lbrace => self.parse_hash_literal()?,
             Token::If => self.parse_if_expression()?,
             Token::Function => self.parse_function_literal()?,
             token => Err(format!("no prefix parse function for {token}"))?,
@@ -196,7 +197,11 @@ impl Parser {
                 }
                 Token::Lbracket => {
                     self.next_token();
-                    left_exp = self.parse_index_expression(left_exp)?;
+                    left_exp = self.parse_index_expression(left_exp, Token::Rbracket)?;
+                }
+                Token::Lbrace => {
+                    self.next_token();
+                    left_exp = self.parse_index_expression(left_exp, Token::Rbrace)?;
                 }
                 _ => return Ok(left_exp),
             };
@@ -288,6 +293,32 @@ impl Parser {
         let elements = self.parse_expression_list(Token::Rbracket)?;
 
         Ok(Expression::ArrayLiteral(elements))
+    }
+
+    fn parse_hash_literal(&mut self) -> Result<Expression, String> {
+        let mut pairs: Vec<(Expression, Expression)> = Vec::new();
+
+        while self
+            .peek_token()
+            .is_some_and(|token| !token.variant_eq(Token::Rbrace))
+        {
+            self.next_token();
+            let key = self.parse_expression(Precedence::Lowest)?;
+            self.expect_peek(Token::Colon)?;
+            self.next_token();
+            let value = self.parse_expression(Precedence::Lowest)?;
+            pairs.push((key, value));
+            if !self
+                .peek_token()
+                .is_some_and(|token| token.variant_eq(Token::Rbrace))
+            {
+                self.expect_peek(Token::Comma)?;
+            }
+        }
+
+        self.expect_peek(Token::Rbrace)?;
+
+        Ok(Expression::HashLiteral(pairs))
     }
 
     fn parse_function_literal(&mut self) -> Result<Expression, String> {
@@ -390,10 +421,14 @@ impl Parser {
         Ok(arguments)
     }
 
-    fn parse_index_expression(&mut self, left: Expression) -> Result<Expression, String> {
+    fn parse_index_expression(
+        &mut self,
+        left: Expression,
+        end_token: Token,
+    ) -> Result<Expression, String> {
         self.next_token();
         let index = self.parse_expression(Precedence::Lowest)?;
-        self.expect_peek(Token::Rbracket)?;
+        self.expect_peek(end_token)?;
         Ok(Expression::Index {
             left: Box::new(left),
             index: Box::new(index),
@@ -663,6 +698,109 @@ mod tests {
                 assert_integer_literal(index.deref(), 0);
             }
             _ => panic!("expected index expression, found {expr}"),
+        }
+    }
+
+    #[test]
+    fn hash_literals() {
+        let program = get_program(
+            r#"
+            {"one": 1, true: "2", "three": false};
+        "#,
+        );
+        assert_eq!(program.statements.len(), 1);
+        let statement = program.statements.first().unwrap();
+        let expr = match statement {
+            Statement::Expression(expression) => expression,
+            _ => panic!("expected expression statement, found {statement}"),
+        };
+        match expr {
+            Expression::HashLiteral(pairs) => {
+                assert_eq!(pairs.len(), 3);
+                let expected = vec![
+                    (
+                        Expression::StringLiteral("one".to_string()),
+                        Expression::IntegerLiteral(1),
+                    ),
+                    (
+                        Expression::BooleanLiteral(true),
+                        Expression::StringLiteral("2".to_string()),
+                    ),
+                    (
+                        Expression::StringLiteral("three".to_string()),
+                        Expression::BooleanLiteral(false),
+                    ),
+                ];
+                assert_eq!(*pairs, expected);
+            }
+            _ => panic!("expected hash literal, found {expr}"),
+        }
+    }
+
+    #[test]
+    fn empty_hash_literal() {
+        let program = get_program(
+            r#"
+            {};
+        "#,
+        );
+        assert_eq!(program.statements.len(), 1);
+        let statement = program.statements.first().unwrap();
+        let expr = match statement {
+            Statement::Expression(expression) => expression,
+            _ => panic!("expected expression statement, found {statement}"),
+        };
+        match expr {
+            Expression::HashLiteral(pairs) => assert_eq!(pairs.len(), 0),
+            _ => panic!("expected hash literal, found {expr}"),
+        }
+    }
+
+    #[test]
+    fn hash_literals_with_expressions() {
+        let program = get_program(
+            r#"
+            {"one": 0 + 1, "two": 10 - 8, "three": 15 > 5 };
+        "#,
+        );
+        assert_eq!(program.statements.len(), 1);
+        let statement = program.statements.first().unwrap();
+        let expr = match statement {
+            Statement::Expression(expression) => expression,
+            _ => panic!("expected expression statement, found {statement}"),
+        };
+        match expr {
+            Expression::HashLiteral(pairs) => {
+                assert_eq!(pairs.len(), 3);
+                let expected = vec![
+                    (
+                        Expression::StringLiteral("one".to_string()),
+                        Expression::Infix {
+                            left: Box::new(Expression::IntegerLiteral(0)),
+                            operator: Token::Plus,
+                            right: Box::new(Expression::IntegerLiteral(1)),
+                        },
+                    ),
+                    (
+                        Expression::StringLiteral("two".to_string()),
+                        Expression::Infix {
+                            left: Box::new(Expression::IntegerLiteral(10)),
+                            operator: Token::Minus,
+                            right: Box::new(Expression::IntegerLiteral(8)),
+                        },
+                    ),
+                    (
+                        Expression::StringLiteral("three".to_string()),
+                        Expression::Infix {
+                            left: Box::new(Expression::IntegerLiteral(15)),
+                            operator: Token::Gt,
+                            right: Box::new(Expression::IntegerLiteral(5)),
+                        },
+                    ),
+                ];
+                assert_eq!(*pairs, expected);
+            }
+            _ => panic!("expected hash literal, found {expr}"),
         }
     }
 

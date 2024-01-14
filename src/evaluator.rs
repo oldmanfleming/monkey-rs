@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
     ast::{Expression, Program, Statement},
@@ -98,9 +98,27 @@ fn eval_expression(
             arguments,
         } => eval_call_function(function, env, arguments)?,
         Expression::ArrayLiteral(elements) => eval_array_literal(elements, env)?,
+        Expression::HashLiteral(pairs) => eval_hash_literal(pairs, env)?,
         Expression::Index { left, index } => eval_index(left, index, env)?,
+        _ => Err(format!("{} not implemented", expression))?,
     };
     Ok(object)
+}
+
+fn eval_hash_literal(
+    pairs: Vec<(Expression, Expression)>,
+    env: Rc<RefCell<Environment>>,
+) -> Result<Object, String> {
+    let mut hash = HashMap::new();
+    for (key, value) in pairs {
+        let key = eval_expression(key, env.clone())?;
+        if !key.hashable() {
+            Err(format!("unusable as hash key: {}", key))?
+        }
+        let value = eval_expression(value, env.clone())?;
+        hash.insert(key, value);
+    }
+    Ok(Object::Hash(hash))
 }
 
 fn eval_array_literal(
@@ -126,6 +144,15 @@ fn eval_index(
             Some(element) => Ok(element.clone()),
             None => Ok(NULL),
         },
+        (Object::Hash(hash), index) => {
+            if !index.hashable() {
+                Err(format!("unusable as hash key: {}", index))?
+            }
+            match hash.get(&index) {
+                Some(value) => Ok(value.clone()),
+                None => Ok(NULL),
+            }
+        }
         _ => Err(format!("index operator not supported: {}", left)),
     }
 }
@@ -444,6 +471,14 @@ mod tests {
                 r#"len("one", "two")"#,
                 "wrong number of arguments for len: want=1, got=2",
             ),
+            (
+                r#"{fn(x) { x }: "Monkey"};"#,
+                "unusable as hash key: fn(x) { x\n }",
+            ),
+            (
+                r#"{"name": "Monkey"}[fn(x) { x }];"#,
+                "unusable as hash key: fn(x) { x\n }",
+            ),
         ];
 
         for (input, expected) in tests {
@@ -621,6 +656,47 @@ mod tests {
         ];
 
         for (input, expected) in tests {
+            let evaluated = test_eval(input).unwrap();
+            assert_eq!(evaluated, expected);
+        }
+    }
+
+    #[test]
+    fn test_hash_literals() {
+        let tests = vec![(
+            r#"{"one": 5 + 5, "two": 10 * 2, "thr" + "ee": 6 / 2, 4: 4, true: 5, false: 6 }"#,
+            Object::Hash(
+                vec![
+                    (Object::String("one".to_string()), Object::Integer(10)),
+                    (Object::String("two".to_string()), Object::Integer(20)),
+                    (Object::String("three".to_string()), Object::Integer(3)),
+                    (Object::Integer(4), Object::Integer(4)),
+                    (Object::Boolean(true), Object::Integer(5)),
+                    (Object::Boolean(false), Object::Integer(6)),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+        )];
+
+        for (input, expected) in tests {
+            let evaluated = test_eval(input).unwrap();
+            assert_eq!(evaluated, expected);
+        }
+    }
+
+    #[test]
+    fn test_hash_indexing() {
+        let cases = vec![
+            (r#"{"foo": 5}["foo"]"#, Object::Integer(5)),
+            (r#"{"foo": 5}["bar"]"#, Object::Null),
+            (r#"let key = "foo"; {"foo": 5}[key]"#, Object::Integer(5)),
+            (r#"{}["foo"]"#, Object::Null),
+            (r#"{5: 5}[5]"#, Object::Integer(5)),
+            (r#"{true: 5}[true]"#, Object::Integer(5)),
+            (r#"{false: 5}[false]"#, Object::Integer(5)),
+        ];
+        for (input, expected) in cases {
             let evaluated = test_eval(input).unwrap();
             assert_eq!(evaluated, expected);
         }

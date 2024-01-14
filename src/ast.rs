@@ -46,6 +46,7 @@ pub enum Expression {
     StringLiteral(String),
     BooleanLiteral(bool),
     ArrayLiteral(Vec<Expression>),
+    HashLiteral(Vec<(Expression, Expression)>),
     Prefix {
         operator: Token,
         right: Box<Expression>,
@@ -88,6 +89,14 @@ impl fmt::Display for Expression {
                     .collect::<Vec<String>>()
                     .join(", ");
                 write!(f, "[{values}]")
+            }
+            Expression::HashLiteral(pairs) => {
+                let pairs = pairs
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k, v))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                write!(f, "{{{pairs}}}")
             }
             Expression::Prefix { operator, right } => write!(f, "({operator}{right})"),
             Expression::Infix {
