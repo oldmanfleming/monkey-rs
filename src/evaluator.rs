@@ -131,6 +131,7 @@ fn eval_call_function(
             });
             eval_statement(body, fn_env)?
         }
+        Object::BuiltInFunction(function) => function(args)?,
         _ => Err(format!("{} is not a function", fn_literal))?,
     })
 }
@@ -409,6 +410,11 @@ mod tests {
             ),
             ("foobar", "identifier not found: foobar"),
             (r#""Hello" - "World""#, "unknown operator: Hello - World"),
+            (r#"len(1)"#, "argument to `len` not supported, got 1"),
+            (
+                r#"len("one", "two")"#,
+                "wrong number of arguments for len: want=1, got=2",
+            ),
         ];
 
         for (input, expected) in tests {
@@ -524,6 +530,33 @@ mod tests {
 
         for (input, expected) in tests {
             let evaluated = test_eval(input).unwrap();
+            assert_eq!(evaluated, expected);
+        }
+    }
+
+    #[test]
+    fn test_builtin_functions() {
+        let tests = vec![
+            (r#"len("")"#, Object::Integer(0)),
+            (r#"len("four")"#, Object::Integer(4)),
+            (r#"len("hello world")"#, Object::Integer(11)),
+            // (r#"len([1, 2, 3])"#, Object::Integer(3)),
+            // (r#"len([])"#, Object::Integer(0)),
+            // (r#"len([1, 2, 3], [4, 5, 6])"#, Object::String("wrong number of arguments. got=2, want=1".to_string())),
+            // (r#"first([1, 2, 3])"#, Object::Integer(1)),
+            // (r#"first([])"#, Object::Null),
+            // (r#"first(1)"#, Object::String("argument to `first` must be ARRAY, got Integer".to_string())),
+            // (r#"first([1, 2, 3], [4, 5, 6])"#, Object::String("wrong number of arguments. got=2, want=1".to_string())),
+            // (r#"last([1, 2, 3])"#, Object::Integer(3)),
+            // (r#"last([])"#, Object::Null),
+            // (r#"last(1)"#, Object::String("argument to `last` must be ARRAY, got Integer".to_string())),
+            // (r#"last([1, 2, 3], [4, 5, 6])"#, Object::String("wrong number of arguments. got=2, want=1".to_string())),
+            // (r#"rest([1, 2, 3])"#, Object::Array(vec![Object::Integer(2), Object::Integer(3)])),
+            // (r#"rest([])"#, Object::Null),
+            // (r#"rest(1)"#, Object::String("argument to `rest` must be ARRAY, got Integer".to_string())),
+        ];
+        for (case, expected) in tests {
+            let evaluated = test_eval(case).unwrap();
             assert_eq!(evaluated, expected);
         }
     }

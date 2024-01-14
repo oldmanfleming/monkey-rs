@@ -15,6 +15,7 @@ pub enum Object {
         body: Statement,
         env: Rc<RefCell<Environment>>,
     },
+    BuiltInFunction(fn(Vec<Object>) -> Result<Object, String>),
 }
 
 impl fmt::Display for Object {
@@ -30,6 +31,9 @@ impl fmt::Display for Object {
                 body,
                 env: _,
             } => write!(f, "fn({}) {{\n{}\n}}", parameters.join(", "), body),
+            Object::BuiltInFunction(function) => {
+                write!(f, "builtin function {:?}", function)
+            }
         }
     }
 }
