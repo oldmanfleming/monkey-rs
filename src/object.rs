@@ -9,6 +9,7 @@ pub enum Object {
     String(String),
     Boolean(bool),
     Null,
+    Array(Vec<Object>),
     ReturnValue(Box<Object>),
     Function {
         parameters: Vec<String>,
@@ -25,6 +26,10 @@ impl fmt::Display for Object {
             Object::String(value) => write!(f, "{}", value),
             Object::Boolean(value) => write!(f, "{}", value),
             Object::Null => write!(f, "null"),
+            Object::Array(values) => {
+                let values: Vec<String> = values.iter().map(|v| format!("{}", v)).collect();
+                write!(f, "[{}]", values.join(", "))
+            }
             Object::ReturnValue(value) => write!(f, "return {}", value),
             Object::Function {
                 parameters,

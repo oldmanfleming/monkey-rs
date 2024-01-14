@@ -13,6 +13,7 @@ enum Precedence {
     Product,
     Prefix,
     Call,
+    Index,
 }
 
 impl Precedence {
@@ -23,6 +24,7 @@ impl Precedence {
             Token::Plus | Token::Minus => Precedence::Sum,
             Token::Asterisk | Token::Slash => Precedence::Product,
             Token::Lparen => Precedence::Call,
+            Token::Lbracket => Precedence::Index,
             _ => Precedence::Lowest,
         }
     }
@@ -165,6 +167,7 @@ impl Parser {
             Token::True | Token::False => self.parse_boolean_literal(cur_token)?,
             Token::Bang | Token::Minus => self.parse_prefix_expression(cur_token)?,
             Token::Lparen => self.parse_grouped_expression()?,
+            Token::Lbracket => self.parse_array_literal()?,
             Token::If => self.parse_if_expression()?,
             Token::Function => self.parse_function_literal()?,
             token => Err(format!("no prefix parse function for {token}"))?,
@@ -190,6 +193,10 @@ impl Parser {
                 Token::Lparen => {
                     self.next_token();
                     left_exp = self.parse_call_expression(left_exp)?;
+                }
+                Token::Lbracket => {
+                    self.next_token();
+                    left_exp = self.parse_index_expression(left_exp)?;
                 }
                 _ => return Ok(left_exp),
             };
@@ -277,10 +284,16 @@ impl Parser {
         })
     }
 
+    fn parse_array_literal(&mut self) -> Result<Expression, String> {
+        let elements = self.parse_expression_list(Token::Rbracket)?;
+
+        Ok(Expression::ArrayLiteral(elements))
+    }
+
     fn parse_function_literal(&mut self) -> Result<Expression, String> {
         self.expect_peek(Token::Lparen)?;
 
-        let parameters = self.parse_function_parameters()?;
+        let parameters = self.parse_expression_list(Token::Rparen)?;
 
         self.expect_peek(Token::Lbrace)?;
 
@@ -292,12 +305,12 @@ impl Parser {
         })
     }
 
-    fn parse_function_parameters(&mut self) -> Result<Vec<Expression>, String> {
+    fn parse_expression_list(&mut self, end_token: Token) -> Result<Vec<Expression>, String> {
         let mut identifiers: Vec<Expression> = Vec::new();
 
         if self
             .peek_token()
-            .is_some_and(|token| token.variant_eq(Token::Rparen))
+            .is_some_and(|token| token.variant_eq(end_token.clone()))
         {
             self.next_token();
             return Ok(identifiers);
@@ -305,10 +318,8 @@ impl Parser {
 
         self.next_token();
 
-        match self.cur_token().ok_or(format!("no token found"))? {
-            Token::Ident(value) => identifiers.push(Expression::Identifier(value)),
-            token => Err(format!("expected identifier, found {token}"))?,
-        };
+        let expression = self.parse_expression(Precedence::Lowest)?;
+        identifiers.push(expression);
 
         while self
             .peek_token()
@@ -316,13 +327,11 @@ impl Parser {
         {
             self.next_token();
             self.next_token();
-            match self.cur_token().ok_or(format!("no token found"))? {
-                Token::Ident(value) => identifiers.push(Expression::Identifier(value)),
-                token => Err(format!("expected identifier, found {token}"))?,
-            };
+            let expression = self.parse_expression(Precedence::Lowest)?;
+            identifiers.push(expression);
         }
 
-        self.expect_peek(Token::Rparen)?;
+        self.expect_peek(end_token)?;
 
         Ok(identifiers)
     }
@@ -379,6 +388,16 @@ impl Parser {
         self.expect_peek(Token::Rparen)?;
 
         Ok(arguments)
+    }
+
+    fn parse_index_expression(&mut self, left: Expression) -> Result<Expression, String> {
+        self.next_token();
+        let index = self.parse_expression(Precedence::Lowest)?;
+        self.expect_peek(Token::Rbracket)?;
+        Ok(Expression::Index {
+            left: Box::new(left),
+            index: Box::new(index),
+        })
     }
 }
 
@@ -490,6 +509,160 @@ mod tests {
         match expr {
             Expression::StringLiteral(value) => assert_eq!(value, "hello world"),
             _ => panic!("expected string literal, found {expr}"),
+        }
+    }
+
+    #[test]
+    fn array_literals() {
+        let program = get_program(
+            r#"
+            [1, 2 * 2, 3 + 3, "four", add(5, 5), fn(x, y) { x + y; }];
+        "#,
+        );
+        assert_eq!(program.statements.len(), 1);
+        let statement = program.statements.first().unwrap();
+        let expr = match statement {
+            Statement::Expression(expression) => expression,
+            _ => panic!("expected expression statement, found {statement}"),
+        };
+        match expr {
+            Expression::ArrayLiteral(values) => {
+                assert_eq!(values.len(), 6);
+                assert_integer_literal(&values[0], 1);
+                assert_infix_expression(
+                    &values[1],
+                    Expression::IntegerLiteral(2),
+                    Token::Asterisk,
+                    Expression::IntegerLiteral(2),
+                );
+                assert_infix_expression(
+                    &values[2],
+                    Expression::IntegerLiteral(3),
+                    Token::Plus,
+                    Expression::IntegerLiteral(3),
+                );
+                match &values[3] {
+                    Expression::StringLiteral(value) => assert_eq!(value, "four"),
+                    _ => panic!("expected string literal, found {expr}"),
+                }
+                match &values[4] {
+                    Expression::Call {
+                        function,
+                        arguments,
+                    } => {
+                        assert_identifier_expression(function.deref(), "add");
+                        assert_eq!(arguments.len(), 2);
+                        assert_integer_literal(&arguments[0], 5);
+                        assert_integer_literal(&arguments[1], 5);
+                    }
+                    _ => panic!("expected call expression, found {expr}"),
+                }
+                match &values[5] {
+                    Expression::FunctionLiteral { parameters, body } => {
+                        assert_eq!(parameters.len(), 2);
+                        assert_identifier_expression(&parameters[0], "x");
+                        assert_identifier_expression(&parameters[1], "y");
+                        match body.deref() {
+                            Statement::Block(statements) => {
+                                assert_eq!(statements.len(), 1);
+                                match &statements[0] {
+                                    Statement::Expression(expression) => match expression {
+                                        Expression::Infix {
+                                            left,
+                                            operator,
+                                            right,
+                                        } => {
+                                            assert_identifier_expression(left.deref(), "x");
+                                            assert_eq!(*operator, Token::Plus);
+                                            assert_identifier_expression(right.deref(), "y");
+                                        }
+                                        _ => panic!("expected infix expression, found {expr}"),
+                                    },
+                                    _ => panic!("expected expression statement, found {statement}"),
+                                }
+                            }
+                            _ => panic!("expected block statement, found {statement}"),
+                        }
+                    }
+                    _ => panic!("expected function literal, found {expr}"),
+                }
+            }
+            _ => panic!("expected array literal, found {expr}"),
+        }
+    }
+
+    #[test]
+    fn empty_array_literal() {
+        let program = get_program(
+            r#"
+            [];
+        "#,
+        );
+        assert_eq!(program.statements.len(), 1);
+        let statement = program.statements.first().unwrap();
+        let expr = match statement {
+            Statement::Expression(expression) => expression,
+            _ => panic!("expected expression statement, found {statement}"),
+        };
+        match expr {
+            Expression::ArrayLiteral(values) => assert_eq!(values.len(), 0),
+            _ => panic!("expected array literal, found {expr}"),
+        }
+    }
+
+    #[test]
+    fn index_expressions() {
+        let program = get_program(
+            r#"
+            myArray[1 + 1];
+        "#,
+        );
+        assert_eq!(program.statements.len(), 1);
+        let statement = program.statements.first().unwrap();
+        let expr = match statement {
+            Statement::Expression(expression) => expression,
+            _ => panic!("expected expression statement, found {statement}"),
+        };
+        match expr {
+            Expression::Index { left, index } => {
+                assert_identifier_expression(left.deref(), "myArray");
+                assert_infix_expression(
+                    index.deref(),
+                    Expression::IntegerLiteral(1),
+                    Token::Plus,
+                    Expression::IntegerLiteral(1),
+                );
+            }
+            _ => panic!("expected index expression, found {expr}"),
+        }
+    }
+
+    #[test]
+    fn index_array_literal() {
+        let program = get_program(
+            r#"
+            [1, 2, 3][0];
+        "#,
+        );
+        assert_eq!(program.statements.len(), 1);
+        let statement = program.statements.first().unwrap();
+        let expr = match statement {
+            Statement::Expression(expression) => expression,
+            _ => panic!("expected expression statement, found {statement}"),
+        };
+        match expr {
+            Expression::Index { left, index } => {
+                assert_eq!(
+                    left.deref(),
+                    &Expression::ArrayLiteral(vec![
+                        Expression::IntegerLiteral(1),
+                        Expression::IntegerLiteral(2),
+                        Expression::IntegerLiteral(3),
+                    ])
+                );
+                assert_integer_literal(index.deref(), 0);
+            }
+            _ => panic!("expected index expression, found {expr}"),
         }
     }
 
@@ -636,6 +809,14 @@ mod tests {
             (
                 "add(a + b + c * d / f + g)",
                 "add((((a + b) + ((c * d) / f)) + g))",
+            ),
+            (
+                "a * [1, 2, 3, 4][b * c] * d",
+                "((a * ([1, 2, 3, 4][(b * c)])) * d)",
+            ),
+            (
+                "add(a * b[2], b[1], 2 * [1, 2][1])",
+                "add((a * (b[2])), (b[1]), (2 * ([1, 2][1])))",
             ),
         ];
         for (input, expected) in cases {

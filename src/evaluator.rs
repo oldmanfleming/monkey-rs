@@ -97,8 +97,37 @@ fn eval_expression(
             function,
             arguments,
         } => eval_call_function(function, env, arguments)?,
+        Expression::ArrayLiteral(elements) => eval_array_literal(elements, env)?,
+        Expression::Index { left, index } => eval_index(left, index, env)?,
     };
     Ok(object)
+}
+
+fn eval_array_literal(
+    elements: Vec<Expression>,
+    env: Rc<RefCell<Environment>>,
+) -> Result<Object, String> {
+    let elements = elements
+        .into_iter()
+        .map(|e| eval_expression(e, env.clone()))
+        .collect::<Result<Vec<Object>, String>>()?;
+    Ok(Object::Array(elements))
+}
+
+fn eval_index(
+    left: Box<Expression>,
+    index: Box<Expression>,
+    env: Rc<RefCell<Environment>>,
+) -> Result<Object, String> {
+    let left = eval_expression(*left, env.clone())?;
+    let index = eval_expression(*index, env)?;
+    match (left.clone(), index) {
+        (Object::Array(elements), Object::Integer(index)) => match elements.get(index as usize) {
+            Some(element) => Ok(element.clone()),
+            None => Ok(NULL),
+        },
+        _ => Err(format!("index operator not supported: {}", left)),
+    }
 }
 
 fn eval_call_function(
@@ -535,25 +564,95 @@ mod tests {
     }
 
     #[test]
+    fn test_array_literals() {
+        let tests = vec![
+            (
+                r#"[1, "2", true, fn (x) { x + x; }];"#,
+                Object::Array(vec![
+                    Object::Integer(1),
+                    Object::String("2".to_string()),
+                    Object::Boolean(true),
+                    Object::Function {
+                        parameters: vec!["x".to_string()],
+                        body: Statement::Block(vec![Statement::Expression(Expression::Infix {
+                            left: Box::new(Expression::Identifier("x".to_string())),
+                            operator: Token::Plus,
+                            right: Box::new(Expression::Identifier("x".to_string())),
+                        })]),
+                        env: Environment::new_enclosed_environment(Environment::new()),
+                    },
+                ]),
+            ),
+            (
+                "[1 + 2, 3 * 4, 5 + 6]",
+                Object::Array(vec![
+                    Object::Integer(3),
+                    Object::Integer(12),
+                    Object::Integer(11),
+                ]),
+            ),
+        ];
+
+        for (input, expected) in tests {
+            let evaluated = test_eval(input).unwrap();
+            assert_eq!(evaluated, expected);
+        }
+    }
+
+    #[test]
+    fn test_array_index_expressions() {
+        let tests = vec![
+            ("[1, 2, 3][0]", Object::Integer(1)),
+            ("[1, 2, 3][1]", Object::Integer(2)),
+            ("[1, 2, 3][2]", Object::Integer(3)),
+            ("let i = 0; [1][i];", Object::Integer(1)),
+            ("[1, 2, 3][1 + 1];", Object::Integer(3)),
+            ("let myArray = [1, 2, 3]; myArray[2];", Object::Integer(3)),
+            (
+                "let myArray = [1, 2, 3]; myArray[0] + myArray[1] + myArray[2];",
+                Object::Integer(6),
+            ),
+            (
+                "let myArray = [1, 2, 3]; let i = myArray[0]; myArray[i]",
+                Object::Integer(2),
+            ),
+            ("[1, 2, 3][3]", Object::Null),
+            ("[1, 2, 3][-1]", Object::Null),
+        ];
+
+        for (input, expected) in tests {
+            let evaluated = test_eval(input).unwrap();
+            assert_eq!(evaluated, expected);
+        }
+    }
+
+    #[test]
     fn test_builtin_functions() {
         let tests = vec![
             (r#"len("")"#, Object::Integer(0)),
             (r#"len("four")"#, Object::Integer(4)),
             (r#"len("hello world")"#, Object::Integer(11)),
-            // (r#"len([1, 2, 3])"#, Object::Integer(3)),
-            // (r#"len([])"#, Object::Integer(0)),
-            // (r#"len([1, 2, 3], [4, 5, 6])"#, Object::String("wrong number of arguments. got=2, want=1".to_string())),
-            // (r#"first([1, 2, 3])"#, Object::Integer(1)),
-            // (r#"first([])"#, Object::Null),
-            // (r#"first(1)"#, Object::String("argument to `first` must be ARRAY, got Integer".to_string())),
-            // (r#"first([1, 2, 3], [4, 5, 6])"#, Object::String("wrong number of arguments. got=2, want=1".to_string())),
-            // (r#"last([1, 2, 3])"#, Object::Integer(3)),
-            // (r#"last([])"#, Object::Null),
-            // (r#"last(1)"#, Object::String("argument to `last` must be ARRAY, got Integer".to_string())),
-            // (r#"last([1, 2, 3], [4, 5, 6])"#, Object::String("wrong number of arguments. got=2, want=1".to_string())),
-            // (r#"rest([1, 2, 3])"#, Object::Array(vec![Object::Integer(2), Object::Integer(3)])),
-            // (r#"rest([])"#, Object::Null),
-            // (r#"rest(1)"#, Object::String("argument to `rest` must be ARRAY, got Integer".to_string())),
+            (r#"len([1, 2, 3])"#, Object::Integer(3)),
+            (r#"len([])"#, Object::Integer(0)),
+            (r#"first([1, 2, 3])"#, Object::Integer(1)),
+            (r#"first([])"#, Object::Null),
+            (r#"last([1, 2, 3])"#, Object::Integer(3)),
+            (r#"last([])"#, Object::Null),
+            (
+                r#"rest([1, 2, 3])"#,
+                Object::Array(vec![Object::Integer(2), Object::Integer(3)]),
+            ),
+            (r#"rest([])"#, Object::Null),
+            (r#"push([], 1)"#, Object::Array(vec![Object::Integer(1)])),
+            (
+                r#"push([1, 2, 3], 4)"#,
+                Object::Array(vec![
+                    Object::Integer(1),
+                    Object::Integer(2),
+                    Object::Integer(3),
+                    Object::Integer(4),
+                ]),
+            ),
         ];
         for (case, expected) in tests {
             let evaluated = test_eval(case).unwrap();

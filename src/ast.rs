@@ -45,6 +45,7 @@ pub enum Expression {
     IntegerLiteral(i64),
     StringLiteral(String),
     BooleanLiteral(bool),
+    ArrayLiteral(Vec<Expression>),
     Prefix {
         operator: Token,
         right: Box<Expression>,
@@ -67,6 +68,10 @@ pub enum Expression {
         function: Box<Expression>,
         arguments: Vec<Expression>,
     },
+    Index {
+        left: Box<Expression>,
+        index: Box<Expression>,
+    },
 }
 
 impl fmt::Display for Expression {
@@ -76,6 +81,14 @@ impl fmt::Display for Expression {
             Expression::IntegerLiteral(value) => write!(f, "{value}"),
             Expression::StringLiteral(value) => write!(f, "{value}"),
             Expression::BooleanLiteral(value) => write!(f, "{value}"),
+            Expression::ArrayLiteral(values) => {
+                let values = values
+                    .iter()
+                    .map(|v| format!("{}", v))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                write!(f, "[{values}]")
+            }
             Expression::Prefix { operator, right } => write!(f, "({operator}{right})"),
             Expression::Infix {
                 left,
@@ -114,6 +127,7 @@ impl fmt::Display for Expression {
                 write!(f, "{function}({args})",)?;
                 Ok(())
             }
+            Expression::Index { left, index } => write!(f, "({left}[{index}])"),
         }
     }
 }
