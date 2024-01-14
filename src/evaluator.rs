@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
@@ -98,7 +96,6 @@ fn eval_expression(
             function,
             arguments,
         } => eval_call_function(function, env, arguments)?,
-        expression => Err(format!("{} not implemented", expression))?,
     };
     Ok(object)
 }
