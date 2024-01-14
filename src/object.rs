@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 
 use core::fmt;
-use std::collections::HashMap;
+use std::{cell::RefCell, rc::Rc};
 
-use crate::ast::Statement;
+use crate::{ast::Statement, environment::Environment};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Object {
@@ -14,7 +14,7 @@ pub enum Object {
     Function {
         parameters: Vec<String>,
         body: Statement,
-        env: Environment,
+        env: Rc<RefCell<Environment>>,
     },
 }
 
@@ -31,26 +31,5 @@ impl fmt::Display for Object {
                 env: _,
             } => write!(f, "fn({}) {{\n{}\n}}", parameters.join(", "), body),
         }
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct Environment {
-    store: HashMap<String, Object>,
-}
-
-impl Environment {
-    pub fn new() -> Self {
-        Environment {
-            store: HashMap::new(),
-        }
-    }
-
-    pub fn get(&self, name: &str) -> Option<&Object> {
-        self.store.get(name)
-    }
-
-    pub fn set(&mut self, name: &str, value: Object) {
-        self.store.insert(name.to_string(), value);
     }
 }
