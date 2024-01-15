@@ -4,7 +4,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 #[derive(Debug, PartialEq, Clone)]
 pub struct Environment {
     store: HashMap<String, Object>,
-    outer: Option<Rc<RefCell<Environment>>>, // TODO: I don't think this needs to have interior mutability
+    outer: Option<Rc<RefCell<Environment>>>,
 }
 
 impl Environment {
