@@ -1,14 +1,7 @@
-mod ast;
-mod builtins;
-mod environment;
-mod evaluator;
-mod lexer;
-mod object;
-mod parser;
 mod repl;
-mod token;
 
 use clap::{Parser, Subcommand};
+use monkey_rs::{environment::Environment, evaluator, lexer::Lexer, parser};
 use std::{fs, path::PathBuf};
 
 #[derive(Parser)]
@@ -45,13 +38,13 @@ fn main() {
 fn execute_file(path: PathBuf) -> Result<(), String> {
     let input = fs::read_to_string(path).map_err(|err| err.to_string())?;
 
-    let lexer = lexer::Lexer::new(&input);
+    let lexer = Lexer::new(&input);
 
     let mut parser = parser::Parser::new(lexer);
 
     let program = parser.parse_program().map_err(|err| err.to_string())?;
 
-    let env = environment::Environment::new();
+    let env = Environment::new();
 
     let _ = evaluator::eval(program, env).map_err(|err| err.to_string())?;
 

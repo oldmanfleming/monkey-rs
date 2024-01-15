@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use crate::{environment::Environment, evaluator, lexer::Lexer, parser::Parser};
+use monkey_rs::{environment::Environment, evaluator, lexer::Lexer, parser::Parser};
 
 const MONKEY_FACE: &str = r#"
             __,__

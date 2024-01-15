@@ -28,7 +28,7 @@ null
 ```
 $ cargo build --release
 $ echo 'print("Hello, world!")' > hello.mk
-$ ./target/release/monkey-rs run hello.mk
+$ ./target/release/monkey run hello.mk
 Hello, world!
 ```
 
