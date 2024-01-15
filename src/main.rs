@@ -1,11 +1,11 @@
 mod repl;
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
-use monkey_rs::{environment::Environment, evaluator, lexer::Lexer, parser};
+use clap::{Parser as ClapParser, Subcommand};
+use monkey_rs::{Environment, Evaluator, Lexer, Parser};
 use std::{fs, path::PathBuf};
 
-#[derive(Parser)]
+#[derive(ClapParser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
     #[command(subcommand)]
@@ -40,13 +40,15 @@ fn execute_file(path: PathBuf) -> Result<()> {
 
     let lexer = Lexer::new(&input);
 
-    let mut parser = parser::Parser::new(lexer);
+    let mut parser = Parser::new(lexer);
 
     let program = parser.parse_program()?;
 
     let env = Environment::new();
 
-    let _ = evaluator::eval(program, env)?;
+    let evaluator = Evaluator::new();
+
+    let _ = evaluator.eval(program, env)?;
 
     Ok(())
 }

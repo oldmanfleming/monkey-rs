@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use monkey_rs::{environment::Environment, evaluator, lexer::Lexer, parser::Parser};
+use monkey_rs::{Environment, Evaluator, Lexer, Parser};
 
 const MONKEY_FACE: &str = r#"
             __,__
@@ -42,7 +42,9 @@ pub fn start() {
             }
         };
 
-        match evaluator::eval(program, env.clone()) {
+        let evaluator = Evaluator::new();
+
+        match evaluator.eval(program, env.clone()) {
             Ok(evaluated) => println!("{}", evaluated),
             Err(err) => {
                 println!("{}", MONKEY_FACE);

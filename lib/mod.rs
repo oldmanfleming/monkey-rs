@@ -1,9 +1,13 @@
-pub mod environment;
-pub mod evaluator;
-pub mod lexer;
-pub mod parser;
-
 mod ast;
 mod builtins;
+mod environment;
+mod evaluator;
+mod lexer;
 mod object;
+mod parser;
 mod token;
+
+pub use environment::Environment;
+pub use evaluator::Evaluator;
+pub use lexer::Lexer;
+pub use parser::Parser;

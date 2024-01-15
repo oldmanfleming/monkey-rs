@@ -13,302 +13,354 @@ const TRUE: Object = Object::Boolean(true);
 const FALSE: Object = Object::Boolean(false);
 const NULL: Object = Object::Null;
 
-pub fn eval(program: Program, env: Rc<RefCell<Environment>>) -> Result<Object> {
-    let mut result = Object::Null;
-    for statement in program.statements {
-        result = match eval_statement(statement, env.clone())? {
-            Object::ReturnValue(value) => return Ok(*value),
-            object => object,
+pub struct Evaluator;
+
+impl Evaluator {
+    pub fn new() -> Self {
+        Self
+    }
+
+    pub fn eval(&self, program: Program, env: Rc<RefCell<Environment>>) -> Result<Object> {
+        let mut result = Object::Null;
+        for statement in program.statements {
+            result = match self.eval_statement(statement, env.clone())? {
+                Object::ReturnValue(value) => return Ok(*value),
+                object => object,
+            };
+        }
+        Ok(result)
+    }
+
+    fn eval_statement(
+        &self,
+        statement: Statement,
+        env: Rc<RefCell<Environment>>,
+    ) -> Result<Object> {
+        let object = match statement {
+            Statement::Expression(expression) => self.eval_expression(expression, env)?,
+            Statement::Block(statements) => self.eval_block_statement(statements, env)?,
+            Statement::Return(expression) => {
+                let value = self.eval_expression(expression, env)?;
+                return Ok(Object::ReturnValue(Box::new(value)));
+            }
+            Statement::Let { name, value } => self.eval_let_statement(value, name, env)?,
         };
+        Ok(object)
     }
-    Ok(result)
-}
 
-fn eval_statement(statement: Statement, env: Rc<RefCell<Environment>>) -> Result<Object> {
-    let object = match statement {
-        Statement::Expression(expression) => eval_expression(expression, env)?,
-        Statement::Block(statements) => eval_block_statement(statements, env)?,
-        Statement::Return(expression) => {
-            let value = eval_expression(expression, env)?;
-            return Ok(Object::ReturnValue(Box::new(value)));
-        }
-        Statement::Let { name, value } => eval_let_statement(value, name, env)?,
-    };
-    Ok(object)
-}
-
-fn eval_let_statement(
-    value: Expression,
-    name: Expression,
-    env: Rc<RefCell<Environment>>,
-) -> Result<Object> {
-    let value = eval_expression(value, env.clone())?;
-    let str_name = match name {
-        Expression::Identifier(name) => name,
-        _ => bail!("{} not implemented", name),
-    };
-    env.borrow_mut().set(&str_name, value);
-    Ok(Object::Null)
-}
-
-fn eval_block_statement(
-    statements: Vec<Statement>,
-    env: Rc<RefCell<Environment>>,
-) -> Result<Object> {
-    let mut result = Object::Null;
-    for statement in statements {
-        result = eval_statement(statement, env.clone())?;
-        if let Object::ReturnValue(_) = result {
-            return Ok(result);
-        }
+    fn eval_let_statement(
+        &self,
+        value: Expression,
+        name: Expression,
+        env: Rc<RefCell<Environment>>,
+    ) -> Result<Object> {
+        let value = self.eval_expression(value, env.clone())?;
+        let str_name = match name {
+            Expression::Identifier(name) => name,
+            _ => bail!("{} not implemented", name),
+        };
+        env.borrow_mut().set(&str_name, value);
+        Ok(Object::Null)
     }
-    Ok(result)
-}
 
-fn eval_expression(expression: Expression, env: Rc<RefCell<Environment>>) -> Result<Object> {
-    let object = match expression {
-        Expression::IntegerLiteral(value) => Object::Integer(value),
-        Expression::StringLiteral(value) => Object::String(value),
-        Expression::BooleanLiteral(value) => native_bool_to_boolean_object(value),
-        Expression::Prefix { operator, right } => {
-            let right = eval_expression(*right, env)?;
-            eval_prefix_expression(operator, right)?
-        }
-        Expression::Infix {
-            left,
-            operator,
-            right,
-        } => {
-            let left = eval_expression(*left, env.clone())?;
-            let right = eval_expression(*right, env)?;
-            eval_infix_expression(left, operator, right)?
-        }
-        Expression::If {
-            condition,
-            consequence,
-            alternative,
-        } => eval_if_expression(*condition, *consequence, alternative, env)?,
-        Expression::Identifier(name) => eval_identifier_expression(name, env)?,
-        Expression::FunctionLiteral { parameters, body } => {
-            eval_function_literal(parameters, body, env)?
-        }
-        Expression::Call {
-            function,
-            arguments,
-        } => eval_call_function(function, env, arguments)?,
-        Expression::ArrayLiteral(elements) => eval_array_literal(elements, env)?,
-        Expression::HashLiteral(pairs) => eval_hash_literal(pairs, env)?,
-        Expression::Index { left, index } => eval_index(left, index, env)?,
-    };
-    Ok(object)
-}
-
-fn eval_hash_literal(
-    pairs: Vec<(Expression, Expression)>,
-    env: Rc<RefCell<Environment>>,
-) -> Result<Object> {
-    let mut hash = HashMap::new();
-    for (key, value) in pairs {
-        let key = eval_expression(key, env.clone())?;
-        if !key.hashable() {
-            bail!("unusable as hash key: {}", key)
-        }
-        let value = eval_expression(value, env.clone())?;
-        hash.insert(key, value);
-    }
-    Ok(Object::Hash(hash))
-}
-
-fn eval_array_literal(elements: Vec<Expression>, env: Rc<RefCell<Environment>>) -> Result<Object> {
-    let elements = elements
-        .into_iter()
-        .map(|e| eval_expression(e, env.clone()))
-        .collect::<Result<Vec<Object>>>()?;
-    Ok(Object::Array(elements))
-}
-
-fn eval_index(
-    left: Box<Expression>,
-    index: Box<Expression>,
-    env: Rc<RefCell<Environment>>,
-) -> Result<Object> {
-    let left = eval_expression(*left, env.clone())?;
-    let index = eval_expression(*index, env)?;
-    match (left.clone(), index) {
-        (Object::Array(elements), Object::Integer(index)) => match elements.get(index as usize) {
-            Some(element) => Ok(element.clone()),
-            None => Ok(NULL),
-        },
-        (Object::Hash(hash), index) => {
-            if !index.hashable() {
-                bail!("unusable as hash key: {}", index)
-            }
-            match hash.get(&index) {
-                Some(value) => Ok(value.clone()),
-                None => Ok(NULL),
+    fn eval_block_statement(
+        &self,
+        statements: Vec<Statement>,
+        env: Rc<RefCell<Environment>>,
+    ) -> Result<Object> {
+        let mut result = Object::Null;
+        for statement in statements {
+            result = self.eval_statement(statement, env.clone())?;
+            if let Object::ReturnValue(_) = result {
+                return Ok(result);
             }
         }
-        _ => Err(anyhow!("index operator not supported: {}", left)),
+        Ok(result)
     }
-}
 
-fn eval_call_function(
-    function: Box<Expression>,
-    env: Rc<RefCell<Environment>>,
-    arguments: Vec<Expression>,
-) -> Result<Object> {
-    let fn_literal = eval_expression(*function, env.clone())?;
-    let args_env = env.clone();
-    let args = arguments
-        .into_iter()
-        .map(move |arg| eval_expression(arg, args_env.clone()))
-        .collect::<Result<Vec<Object>>>()?;
-    Ok(match fn_literal {
-        Object::Function {
-            parameters,
-            body,
-            env: fn_env,
-        } => {
-            if parameters.len() != args.len() {
-                bail!(
-                    "wrong number of arguments: want={}, got={}",
-                    parameters.len(),
-                    args.len()
-                )
+    fn eval_expression(
+        &self,
+        expression: Expression,
+        env: Rc<RefCell<Environment>>,
+    ) -> Result<Object> {
+        let object = match expression {
+            Expression::IntegerLiteral(value) => Object::Integer(value),
+            Expression::StringLiteral(value) => Object::String(value),
+            Expression::BooleanLiteral(value) => self.native_bool_to_boolean_object(value),
+            Expression::Prefix { operator, right } => {
+                let right = self.eval_expression(*right, env)?;
+                self.eval_prefix_expression(operator, right)?
             }
+            Expression::Infix {
+                left,
+                operator,
+                right,
+            } => {
+                let left = self.eval_expression(*left, env.clone())?;
+                let right = self.eval_expression(*right, env)?;
+                self.eval_infix_expression(left, operator, right)?
+            }
+            Expression::If {
+                condition,
+                consequence,
+                alternative,
+            } => self.eval_if_expression(*condition, *consequence, alternative, env)?,
+            Expression::Identifier(name) => self.eval_identifier_expression(name, env)?,
+            Expression::FunctionLiteral { parameters, body } => {
+                self.eval_function_literal(parameters, body, env)?
+            }
+            Expression::Call {
+                function,
+                arguments,
+            } => self.eval_call_function(function, env, arguments)?,
+            Expression::ArrayLiteral(elements) => self.eval_array_literal(elements, env)?,
+            Expression::HashLiteral(pairs) => self.eval_hash_literal(pairs, env)?,
+            Expression::Index { left, index } => self.eval_index(left, index, env)?,
+        };
+        Ok(object)
+    }
 
-            parameters.into_iter().zip(args).for_each(|(param, arg)| {
-                fn_env.borrow_mut().set(&param, arg);
-            });
-            eval_statement(body, fn_env)?
+    fn eval_hash_literal(
+        &self,
+        pairs: Vec<(Expression, Expression)>,
+        env: Rc<RefCell<Environment>>,
+    ) -> Result<Object> {
+        let mut hash = HashMap::new();
+        for (key, value) in pairs {
+            let key = self.eval_expression(key, env.clone())?;
+            if !key.hashable() {
+                bail!("unusable as hash key: {}", key)
+            }
+            let value = self.eval_expression(value, env.clone())?;
+            hash.insert(key, value);
         }
-        Object::BuiltInFunction(function) => function(args)?,
-        _ => bail!("{} is not a function", fn_literal),
-    })
-}
+        Ok(Object::Hash(hash))
+    }
 
-fn eval_function_literal(
-    parameters: Vec<Expression>,
-    body: Box<Statement>,
-    env: Rc<RefCell<Environment>>,
-) -> Result<Object> {
-    Ok(Object::Function {
-        parameters: parameters
+    fn eval_array_literal(
+        &self,
+        elements: Vec<Expression>,
+        env: Rc<RefCell<Environment>>,
+    ) -> Result<Object> {
+        let elements = elements
             .into_iter()
-            .map(|p| match p {
-                Expression::Identifier(name) => Ok(name),
-                _ => Err(anyhow!("{} not implemented", p)),
-            })
-            .collect::<Result<Vec<String>>>()?,
-        body: *body,
-        env: Environment::new_enclosed_environment(env),
-    })
-}
-
-fn eval_prefix_expression(operator: Token, right: Object) -> Result<Object> {
-    match operator {
-        Token::Bang => eval_bang_operator_expression(right),
-        Token::Minus => eval_minus_prefix_operator_expression(right),
-        _ => bail!("unknown operator: {}{}", operator, right),
+            .map(|e| self.eval_expression(e, env.clone()))
+            .collect::<Result<Vec<Object>>>()?;
+        Ok(Object::Array(elements))
     }
-}
 
-fn eval_bang_operator_expression(right: Object) -> Result<Object> {
-    match right {
-        Object::Boolean(true) => Ok(FALSE),
-        Object::Boolean(false) => Ok(TRUE),
-        Object::Null => Ok(TRUE),
-        _ => Ok(FALSE),
-    }
-}
-
-fn eval_minus_prefix_operator_expression(right: Object) -> Result<Object> {
-    match right {
-        Object::Integer(value) => Ok(Object::Integer(-value)),
-        _ => Err(anyhow!("unknown operator: -{}", right)),
-    }
-}
-
-fn eval_infix_expression(left: Object, operator: Token, right: Object) -> Result<Object> {
-    match (left, right) {
-        (Object::Integer(left), Object::Integer(right)) => {
-            eval_integer_infix_expression(left, operator, right)
+    fn eval_index(
+        &self,
+        left: Box<Expression>,
+        index: Box<Expression>,
+        env: Rc<RefCell<Environment>>,
+    ) -> Result<Object> {
+        let left = self.eval_expression(*left, env.clone())?;
+        let index = self.eval_expression(*index, env)?;
+        match (left.clone(), index) {
+            (Object::Array(elements), Object::Integer(index)) => match elements.get(index as usize)
+            {
+                Some(element) => Ok(element.clone()),
+                None => Ok(NULL),
+            },
+            (Object::Hash(hash), index) => {
+                if !index.hashable() {
+                    bail!("unusable as hash key: {}", index)
+                }
+                match hash.get(&index) {
+                    Some(value) => Ok(value.clone()),
+                    None => Ok(NULL),
+                }
+            }
+            _ => Err(anyhow!("index operator not supported: {}", left)),
         }
-        (Object::Boolean(left), Object::Boolean(right)) => {
-            eval_boolean_infix_expression(left, operator, right)
+    }
+
+    fn eval_call_function(
+        &self,
+        function: Box<Expression>,
+        env: Rc<RefCell<Environment>>,
+        arguments: Vec<Expression>,
+    ) -> Result<Object> {
+        let fn_literal = self.eval_expression(*function, env.clone())?;
+        let args_env = env.clone();
+        let args = arguments
+            .into_iter()
+            .map(move |arg| self.eval_expression(arg, args_env.clone()))
+            .collect::<Result<Vec<Object>>>()?;
+        Ok(match fn_literal {
+            Object::Function {
+                parameters,
+                body,
+                env: fn_env,
+            } => {
+                if parameters.len() != args.len() {
+                    bail!(
+                        "wrong number of arguments: want={}, got={}",
+                        parameters.len(),
+                        args.len()
+                    )
+                }
+
+                parameters.into_iter().zip(args).for_each(|(param, arg)| {
+                    fn_env.borrow_mut().set(&param, arg);
+                });
+                self.eval_statement(body, fn_env)?
+            }
+            Object::BuiltInFunction(function) => function(args)?,
+            _ => bail!("{} is not a function", fn_literal),
+        })
+    }
+
+    fn eval_function_literal(
+        &self,
+        parameters: Vec<Expression>,
+        body: Box<Statement>,
+        env: Rc<RefCell<Environment>>,
+    ) -> Result<Object> {
+        Ok(Object::Function {
+            parameters: parameters
+                .into_iter()
+                .map(|p| match p {
+                    Expression::Identifier(name) => Ok(name),
+                    _ => Err(anyhow!("{} not implemented", p)),
+                })
+                .collect::<Result<Vec<String>>>()?,
+            body: *body,
+            env: Environment::new_enclosed_environment(env),
+        })
+    }
+
+    fn eval_prefix_expression(&self, operator: Token, right: Object) -> Result<Object> {
+        match operator {
+            Token::Bang => self.eval_bang_operator_expression(right),
+            Token::Minus => self.eval_minus_prefix_operator_expression(right),
+            _ => bail!("unknown operator: {}{}", operator, right),
         }
-        (Object::String(left), Object::String(right)) => {
-            eval_string_infix_expression(left, operator, right)
+    }
+
+    fn eval_bang_operator_expression(&self, right: Object) -> Result<Object> {
+        match right {
+            Object::Boolean(true) => Ok(FALSE),
+            Object::Boolean(false) => Ok(TRUE),
+            Object::Null => Ok(TRUE),
+            _ => Ok(FALSE),
         }
-        (left, right) => Err(anyhow!("type mismatch: {} {} {}", left, operator, right)),
     }
-}
 
-fn eval_integer_infix_expression(left: i64, operator: Token, right: i64) -> Result<Object> {
-    match operator {
-        Token::Plus => Ok(Object::Integer(left + right)),
-        Token::Minus => Ok(Object::Integer(left - right)),
-        Token::Asterisk => Ok(Object::Integer(left * right)),
-        Token::Slash => Ok(Object::Integer(left / right)),
-        Token::Lt => Ok(native_bool_to_boolean_object(left < right)),
-        Token::Gt => Ok(native_bool_to_boolean_object(left > right)),
-        Token::Eq => Ok(native_bool_to_boolean_object(left == right)),
-        Token::NotEq => Ok(native_bool_to_boolean_object(left != right)),
-        _ => Err(anyhow!("unknown operator: {} {} {}", left, operator, right)),
+    fn eval_minus_prefix_operator_expression(&self, right: Object) -> Result<Object> {
+        match right {
+            Object::Integer(value) => Ok(Object::Integer(-value)),
+            _ => Err(anyhow!("unknown operator: -{}", right)),
+        }
     }
-}
 
-fn eval_boolean_infix_expression(left: bool, operator: Token, right: bool) -> Result<Object> {
-    match operator {
-        Token::Eq => Ok(native_bool_to_boolean_object(left == right)),
-        Token::NotEq => Ok(native_bool_to_boolean_object(left != right)),
-        _ => Err(anyhow!("unknown operator: {} {} {}", left, operator, right)),
+    fn eval_infix_expression(
+        &self,
+        left: Object,
+        operator: Token,
+        right: Object,
+    ) -> Result<Object> {
+        match (left, right) {
+            (Object::Integer(left), Object::Integer(right)) => {
+                self.eval_integer_infix_expression(left, operator, right)
+            }
+            (Object::Boolean(left), Object::Boolean(right)) => {
+                self.eval_boolean_infix_expression(left, operator, right)
+            }
+            (Object::String(left), Object::String(right)) => {
+                self.eval_string_infix_expression(left, operator, right)
+            }
+            (left, right) => Err(anyhow!("type mismatch: {} {} {}", left, operator, right)),
+        }
     }
-}
 
-fn eval_string_infix_expression(left: String, operator: Token, right: String) -> Result<Object> {
-    match operator {
-        Token::Plus => Ok(Object::String(format!("{}{}", left, right))),
-        _ => Err(anyhow!("unknown operator: {} {} {}", left, operator, right)),
+    fn eval_integer_infix_expression(
+        &self,
+        left: i64,
+        operator: Token,
+        right: i64,
+    ) -> Result<Object> {
+        match operator {
+            Token::Plus => Ok(Object::Integer(left + right)),
+            Token::Minus => Ok(Object::Integer(left - right)),
+            Token::Asterisk => Ok(Object::Integer(left * right)),
+            Token::Slash => Ok(Object::Integer(left / right)),
+            Token::Lt => Ok(self.native_bool_to_boolean_object(left < right)),
+            Token::Gt => Ok(self.native_bool_to_boolean_object(left > right)),
+            Token::Eq => Ok(self.native_bool_to_boolean_object(left == right)),
+            Token::NotEq => Ok(self.native_bool_to_boolean_object(left != right)),
+            _ => Err(anyhow!("unknown operator: {} {} {}", left, operator, right)),
+        }
     }
-}
-fn native_bool_to_boolean_object(input: bool) -> Object {
-    if input {
-        TRUE
-    } else {
-        FALSE
-    }
-}
 
-fn eval_if_expression(
-    condition: Expression,
-    consequence: Statement,
-    alternative: Option<Box<Statement>>,
-    env: Rc<RefCell<Environment>>,
-) -> Result<Object> {
-    let condition = eval_expression(condition, env.clone())?;
-    if is_truthy(condition) {
-        eval_statement(consequence, env.clone())
-    } else if let Some(alternative) = alternative {
-        eval_statement(*alternative, env)
-    } else {
-        Ok(NULL)
+    fn eval_boolean_infix_expression(
+        &self,
+        left: bool,
+        operator: Token,
+        right: bool,
+    ) -> Result<Object> {
+        match operator {
+            Token::Eq => Ok(self.native_bool_to_boolean_object(left == right)),
+            Token::NotEq => Ok(self.native_bool_to_boolean_object(left != right)),
+            _ => Err(anyhow!("unknown operator: {} {} {}", left, operator, right)),
+        }
     }
-}
 
-fn is_truthy(object: Object) -> bool {
-    match object {
-        Object::Null => false,
-        Object::Boolean(true) => true,
-        Object::Boolean(false) => false,
-        _ => true,
+    fn eval_string_infix_expression(
+        &self,
+        left: String,
+        operator: Token,
+        right: String,
+    ) -> Result<Object> {
+        match operator {
+            Token::Plus => Ok(Object::String(format!("{}{}", left, right))),
+            _ => Err(anyhow!("unknown operator: {} {} {}", left, operator, right)),
+        }
     }
-}
+    fn native_bool_to_boolean_object(&self, input: bool) -> Object {
+        if input {
+            TRUE
+        } else {
+            FALSE
+        }
+    }
 
-fn eval_identifier_expression(name: String, env: Rc<RefCell<Environment>>) -> Result<Object> {
-    match env.borrow().get(&name) {
-        Some(value) => Ok(value.clone()),
-        None => Err(anyhow!("identifier not found: {}", name)),
+    fn eval_if_expression(
+        &self,
+        condition: Expression,
+        consequence: Statement,
+        alternative: Option<Box<Statement>>,
+        env: Rc<RefCell<Environment>>,
+    ) -> Result<Object> {
+        let condition = self.eval_expression(condition, env.clone())?;
+        if self.is_truthy(condition) {
+            self.eval_statement(consequence, env.clone())
+        } else if let Some(alternative) = alternative {
+            self.eval_statement(*alternative, env)
+        } else {
+            Ok(NULL)
+        }
+    }
+
+    fn is_truthy(&self, object: Object) -> bool {
+        match object {
+            Object::Null => false,
+            Object::Boolean(true) => true,
+            Object::Boolean(false) => false,
+            _ => true,
+        }
+    }
+
+    fn eval_identifier_expression(
+        &self,
+        name: String,
+        env: Rc<RefCell<Environment>>,
+    ) -> Result<Object> {
+        match env.borrow().get(&name) {
+            Some(value) => Ok(value.clone()),
+            None => Err(anyhow!("identifier not found: {}", name)),
+        }
     }
 }
 
@@ -729,6 +781,7 @@ mod tests {
         let mut parser = Parser::new(lexer);
         let program = parser.parse_program().unwrap();
         let env = Environment::new();
-        eval(program, env)
+        let evaluator = Evaluator::new();
+        evaluator.eval(program, env)
     }
 }
