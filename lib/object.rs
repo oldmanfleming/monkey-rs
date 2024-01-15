@@ -6,6 +6,8 @@ use std::{
     rc::Rc,
 };
 
+use anyhow::Result;
+
 use crate::{ast::Statement, environment::Environment};
 
 #[derive(Debug, PartialEq, Clone)]
@@ -22,7 +24,7 @@ pub enum Object {
         body: Statement,
         env: Rc<RefCell<Environment>>,
     },
-    BuiltInFunction(fn(Vec<Object>) -> Result<Object, String>),
+    BuiltInFunction(fn(Vec<Object>) -> Result<Object>),
 }
 
 impl Object {

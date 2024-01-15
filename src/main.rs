@@ -1,5 +1,6 @@
 mod repl;
 
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use monkey_rs::{environment::Environment, evaluator, lexer::Lexer, parser};
 use std::{fs, path::PathBuf};
@@ -34,18 +35,18 @@ fn main() {
     }
 }
 
-fn execute_file(path: PathBuf) -> Result<(), String> {
-    let input = fs::read_to_string(path).map_err(|err| err.to_string())?;
+fn execute_file(path: PathBuf) -> Result<()> {
+    let input = fs::read_to_string(&path).context(format!("Failed to read {}", path.display()))?;
 
     let lexer = Lexer::new(&input);
 
     let mut parser = parser::Parser::new(lexer);
 
-    let program = parser.parse_program().map_err(|err| err.to_string())?;
+    let program = parser.parse_program()?;
 
     let env = Environment::new();
 
-    let _ = evaluator::eval(program, env).map_err(|err| err.to_string())?;
+    let _ = evaluator::eval(program, env)?;
 
     Ok(())
 }

@@ -1,3 +1,5 @@
+use anyhow::{anyhow, bail, Result};
+
 use crate::object::Object;
 
 pub struct Builtins;
@@ -14,36 +16,36 @@ impl Builtins {
         ]
     }
 
-    fn print_fn(args: Vec<Object>) -> Result<Object, String> {
+    fn print_fn(args: Vec<Object>) -> Result<Object> {
         for arg in args {
             println!("{}", arg);
         }
         Ok(Object::Null)
     }
 
-    fn len_fn(args: Vec<Object>) -> Result<Object, String> {
+    fn len_fn(args: Vec<Object>) -> Result<Object> {
         if args.len() != 1 {
-            return Err(format!(
+            bail!(
                 "wrong number of arguments for len: want=1, got={}",
                 args.len()
-            ));
+            );
         }
 
         match args.first() {
             Some(Object::String(value)) => Ok(Object::Integer(value.len() as i64)),
             Some(Object::Array(value)) => Ok(Object::Integer(value.len() as i64)),
             Some(Object::Hash(value)) => Ok(Object::Integer(value.len() as i64)),
-            Some(other) => Err(format!("argument to `len` not supported, got {}", other)),
-            None => Err("argument to `len` not provided".to_string()),
+            Some(other) => Err(anyhow!("argument to `len` not supported, got {}", other)),
+            None => Err(anyhow!("argument to `len` not provided")),
         }
     }
 
-    fn first_fn(args: Vec<Object>) -> Result<Object, String> {
+    fn first_fn(args: Vec<Object>) -> Result<Object> {
         if args.len() != 1 {
-            return Err(format!(
+            bail!(
                 "wrong number of arguments for first: want=1, got={}",
                 args.len()
-            ));
+            );
         }
 
         match args.first() {
@@ -51,17 +53,17 @@ impl Builtins {
                 Some(value) => Ok(value.clone()),
                 None => Ok(Object::Null),
             },
-            Some(other) => Err(format!("argument to `first` not supported, got {}", other)),
-            None => Err("argument to `first` not provided".to_string()),
+            Some(other) => Err(anyhow!("argument to `first` not supported, got {}", other)),
+            None => Err(anyhow!("argument to `first` not provided")),
         }
     }
 
-    fn last_fn(args: Vec<Object>) -> Result<Object, String> {
+    fn last_fn(args: Vec<Object>) -> Result<Object> {
         if args.len() != 1 {
-            return Err(format!(
+            bail!(
                 "wrong number of arguments for last: want=1, got={}",
                 args.len()
-            ));
+            );
         }
 
         match args.first() {
@@ -69,17 +71,17 @@ impl Builtins {
                 Some(value) => Ok(value.clone()),
                 None => Ok(Object::Null),
             },
-            Some(other) => Err(format!("argument to `last` not supported, got {}", other)),
-            None => Err("argument to `last` not provided".to_string()),
+            Some(other) => Err(anyhow!("argument to `last` not supported, got {}", other)),
+            None => Err(anyhow!("argument to `last` not provided")),
         }
     }
 
-    fn rest_fn(args: Vec<Object>) -> Result<Object, String> {
+    fn rest_fn(args: Vec<Object>) -> Result<Object> {
         if args.len() != 1 {
-            return Err(format!(
+            bail!(
                 "wrong number of arguments for rest: want=1, got={}",
                 args.len()
-            ));
+            );
         }
 
         match args.first() {
@@ -89,17 +91,17 @@ impl Builtins {
                 }
                 Ok(Object::Array(value[1..].to_vec()))
             }
-            Some(other) => Err(format!("argument to `rest` not supported, got {}", other)),
-            None => Err("argument to `rest` not provided".to_string()),
+            Some(other) => Err(anyhow!("argument to `rest` not supported, got {}", other)),
+            None => Err(anyhow!("argument to `rest` not provided")),
         }
     }
 
-    fn push_fn(args: Vec<Object>) -> Result<Object, String> {
+    fn push_fn(args: Vec<Object>) -> Result<Object> {
         if args.len() != 2 {
-            return Err(format!(
+            bail!(
                 "wrong number of arguments for push: want=2, got={}",
                 args.len()
-            ));
+            );
         }
 
         match (args.get(0), args.get(1)) {
@@ -108,9 +110,10 @@ impl Builtins {
                 new_array.push(value.clone());
                 Ok(Object::Array(new_array))
             }
-            (other, value) => Err(format!(
+            (other, value) => Err(anyhow!(
                 "argument to `push` not supported, got {:?} and {:?}",
-                other, value
+                other,
+                value
             )),
         }
     }

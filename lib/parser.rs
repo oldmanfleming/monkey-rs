@@ -1,3 +1,5 @@
+use anyhow::{anyhow, bail, Result};
+
 use crate::{
     ast::{Expression, Program, Statement},
     lexer::Lexer,
@@ -45,7 +47,7 @@ impl Parser {
         }
     }
 
-    pub fn parse_program(&mut self) -> Result<Program, String> {
+    pub fn parse_program(&mut self) -> Result<Program> {
         let mut statements: Vec<Statement> = Vec::new();
         while self.cur_token().is_some() {
             let statement = self.parse_statement()?;
@@ -69,46 +71,44 @@ impl Parser {
         self
     }
 
-    fn peek_precedence(&mut self) -> Result<Precedence, String> {
+    fn peek_precedence(&mut self) -> Result<Precedence> {
         Ok(Precedence::from_token(
-            self.peek_token().ok_or("no token found")?,
+            self.peek_token().ok_or(anyhow!("no token found"))?,
         ))
     }
 
-    fn cur_precedence(&mut self) -> Result<Precedence, String> {
+    fn cur_precedence(&mut self) -> Result<Precedence> {
         Ok(Precedence::from_token(
-            self.cur_token().ok_or("no token found")?,
+            self.cur_token().ok_or(anyhow!("no token found"))?,
         ))
     }
 
-    fn expect_peek(&mut self, exp_token: Token) -> Result<(), String> {
-        let peek_token = self.peek_token().ok_or(format!("no token found"))?;
+    fn expect_peek(&mut self, exp_token: Token) -> Result<()> {
+        let peek_token = self.peek_token().ok_or(anyhow!("no token found"))?;
         if peek_token.variant_eq(exp_token.clone()) {
             self.next_token();
             Ok(())
         } else {
-            Err(format!(
-                "expected next token to be {exp_token}, found {peek_token}",
-            ))
+            bail!("expected next token to be {exp_token}, found {peek_token}",)
         }
     }
 
-    fn parse_statement(&mut self) -> Result<Statement, String> {
-        match self.cur_token().ok_or("no token found")? {
+    fn parse_statement(&mut self) -> Result<Statement> {
+        match self.cur_token().ok_or(anyhow!("no token found"))? {
             Token::Let => self.parse_let_statement(),
             Token::Return => self.parse_return_statement(),
             _ => self.parse_expression_statement(),
         }
     }
 
-    fn parse_let_statement(&mut self) -> Result<Statement, String> {
+    fn parse_let_statement(&mut self) -> Result<Statement> {
         let name = match self
             .next_token()
             .cur_token()
-            .ok_or(format!("no token found"))?
+            .ok_or(anyhow!("no token found"))?
         {
             Token::Ident(value) => Expression::Identifier(value),
-            token => Err(format!("expected identifier, found {token}"))?,
+            token => bail!("expected identifier, found {token}"),
         };
 
         self.expect_peek(Token::Assign)?;
@@ -127,7 +127,7 @@ impl Parser {
         Ok(Statement::Let { name, value })
     }
 
-    fn parse_return_statement(&mut self) -> Result<Statement, String> {
+    fn parse_return_statement(&mut self) -> Result<Statement> {
         self.next_token();
 
         let value = self.parse_expression(Precedence::Lowest)?;
@@ -142,7 +142,7 @@ impl Parser {
         Ok(Statement::Return(value))
     }
 
-    fn parse_expression_statement(&mut self) -> Result<Statement, String> {
+    fn parse_expression_statement(&mut self) -> Result<Statement> {
         let expression = self.parse_expression(Precedence::Lowest)?;
 
         let statement = Statement::Expression(expression);
@@ -157,8 +157,8 @@ impl Parser {
         Ok(statement)
     }
 
-    fn parse_expression(&mut self, precedence: Precedence) -> Result<Expression, String> {
-        let cur_token = self.cur_token().ok_or(format!("no token found"))?;
+    fn parse_expression(&mut self, precedence: Precedence) -> Result<Expression> {
+        let cur_token = self.cur_token().ok_or(anyhow!("no token found"))?;
 
         let mut left_exp = match cur_token.clone() {
             Token::Ident(value) => self.parse_identifier(value),
@@ -171,7 +171,7 @@ impl Parser {
             Token::Lbrace => self.parse_hash_literal()?,
             Token::If => self.parse_if_expression()?,
             Token::Function => self.parse_function_literal()?,
-            token => Err(format!("no prefix parse function for {token}"))?,
+            token => bail!("no prefix parse function for {token}"),
         };
 
         while self
@@ -179,7 +179,7 @@ impl Parser {
             .is_some_and(|token| !token.variant_eq(Token::Semicolon))
             && precedence < self.peek_precedence()?
         {
-            match self.peek_token().ok_or(format!("no token found"))? {
+            match self.peek_token().ok_or(anyhow!("no token found"))? {
                 Token::Plus
                 | Token::Minus
                 | Token::Asterisk
@@ -210,7 +210,7 @@ impl Parser {
         Ok(left_exp)
     }
 
-    fn parse_prefix_expression(&mut self, token: Token) -> Result<Expression, String> {
+    fn parse_prefix_expression(&mut self, token: Token) -> Result<Expression> {
         self.next_token();
         let right = self.parse_expression(Precedence::Prefix)?;
         Ok(Expression::Prefix {
@@ -219,8 +219,8 @@ impl Parser {
         })
     }
 
-    fn parse_infix_expression(&mut self, left: Expression) -> Result<Expression, String> {
-        let token = self.cur_token().ok_or(format!("no token found"))?;
+    fn parse_infix_expression(&mut self, left: Expression) -> Result<Expression> {
+        let token = self.cur_token().ok_or(anyhow!("no token found"))?;
         let precedence = self.cur_precedence()?;
         self.next_token();
         let right = self.parse_expression(precedence)?;
@@ -235,30 +235,30 @@ impl Parser {
         Expression::Identifier(value)
     }
 
-    fn parse_integer_literal(&mut self, literal: String) -> Result<Expression, String> {
+    fn parse_integer_literal(&mut self, literal: String) -> Result<Expression> {
         let value = literal
             .parse::<i64>()
-            .map_err(|err| format!("could not parse integer literal as i64: {err}"))?;
+            .map_err(|err| anyhow!("could not parse integer literal as i64: {err}"))?;
         Ok(Expression::IntegerLiteral(value))
     }
 
-    fn parse_boolean_literal(&mut self, token: Token) -> Result<Expression, String> {
+    fn parse_boolean_literal(&mut self, token: Token) -> Result<Expression> {
         let value = match token {
             Token::True => true,
             Token::False => false,
-            _ => Err(format!("no boolean parse function for {token}"))?,
+            _ => bail!("no boolean parse function for {token}"),
         };
         Ok(Expression::BooleanLiteral(value))
     }
 
-    fn parse_grouped_expression(&mut self) -> Result<Expression, String> {
+    fn parse_grouped_expression(&mut self) -> Result<Expression> {
         self.next_token();
         let exp = self.parse_expression(Precedence::Lowest)?;
         self.expect_peek(Token::Rparen)?;
         Ok(exp)
     }
 
-    fn parse_if_expression(&mut self) -> Result<Expression, String> {
+    fn parse_if_expression(&mut self) -> Result<Expression> {
         self.expect_peek(Token::Lparen)?;
 
         self.next_token();
@@ -289,13 +289,13 @@ impl Parser {
         })
     }
 
-    fn parse_array_literal(&mut self) -> Result<Expression, String> {
+    fn parse_array_literal(&mut self) -> Result<Expression> {
         let elements = self.parse_expression_list(Token::Rbracket)?;
 
         Ok(Expression::ArrayLiteral(elements))
     }
 
-    fn parse_hash_literal(&mut self) -> Result<Expression, String> {
+    fn parse_hash_literal(&mut self) -> Result<Expression> {
         let mut pairs: Vec<(Expression, Expression)> = Vec::new();
 
         while self
@@ -321,7 +321,7 @@ impl Parser {
         Ok(Expression::HashLiteral(pairs))
     }
 
-    fn parse_function_literal(&mut self) -> Result<Expression, String> {
+    fn parse_function_literal(&mut self) -> Result<Expression> {
         self.expect_peek(Token::Lparen)?;
 
         let parameters = self.parse_expression_list(Token::Rparen)?;
@@ -336,7 +336,7 @@ impl Parser {
         })
     }
 
-    fn parse_expression_list(&mut self, end_token: Token) -> Result<Vec<Expression>, String> {
+    fn parse_expression_list(&mut self, end_token: Token) -> Result<Vec<Expression>> {
         let mut identifiers: Vec<Expression> = Vec::new();
 
         if self
@@ -367,7 +367,7 @@ impl Parser {
         Ok(identifiers)
     }
 
-    fn parse_block_statement(&mut self) -> Result<Statement, String> {
+    fn parse_block_statement(&mut self) -> Result<Statement> {
         self.next_token();
 
         let mut statements: Vec<Statement> = Vec::new();
@@ -384,7 +384,7 @@ impl Parser {
         Ok(Statement::Block(statements))
     }
 
-    fn parse_call_expression(&mut self, function: Expression) -> Result<Expression, String> {
+    fn parse_call_expression(&mut self, function: Expression) -> Result<Expression> {
         let arguments = self.parse_call_arguments()?;
         Ok(Expression::Call {
             function: Box::new(function),
@@ -392,7 +392,7 @@ impl Parser {
         })
     }
 
-    fn parse_call_arguments(&mut self) -> Result<Vec<Expression>, String> {
+    fn parse_call_arguments(&mut self) -> Result<Vec<Expression>> {
         let mut arguments: Vec<Expression> = Vec::new();
 
         if self
@@ -421,11 +421,7 @@ impl Parser {
         Ok(arguments)
     }
 
-    fn parse_index_expression(
-        &mut self,
-        left: Expression,
-        end_token: Token,
-    ) -> Result<Expression, String> {
+    fn parse_index_expression(&mut self, left: Expression, end_token: Token) -> Result<Expression> {
         self.next_token();
         let index = self.parse_expression(Precedence::Lowest)?;
         self.expect_peek(end_token)?;
