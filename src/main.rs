@@ -13,7 +13,6 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// run a file
     Run {
         #[arg(name = "FILE")]
         path: PathBuf,
