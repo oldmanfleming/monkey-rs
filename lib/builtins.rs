@@ -32,7 +32,7 @@ impl Builtins {
         match args.first() {
             Some(Object::String(value)) => Ok(Object::Integer(value.len() as i64)),
             Some(Object::Array(value)) => Ok(Object::Integer(value.len() as i64)),
-            // Some(Object::Hash(value)) => Ok(Object::Integer(value.len() as i64)),
+            Some(Object::Hash(value)) => Ok(Object::Integer(value.len() as i64)),
             Some(other) => Err(format!("argument to `len` not supported, got {}", other)),
             None => Err("argument to `len` not provided".to_string()),
         }

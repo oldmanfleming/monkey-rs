@@ -709,6 +709,10 @@ mod tests {
             (r#"len("hello world")"#, Object::Integer(11)),
             (r#"len([1, 2, 3])"#, Object::Integer(3)),
             (r#"len([])"#, Object::Integer(0)),
+            (
+                r#"len({ "one": 1, "two": 2, "three": 3 })"#,
+                Object::Integer(3),
+            ),
             (r#"first([1, 2, 3])"#, Object::Integer(1)),
             (r#"first([])"#, Object::Null),
             (r#"last([1, 2, 3])"#, Object::Integer(3)),
