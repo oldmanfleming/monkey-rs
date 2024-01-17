@@ -7,7 +7,6 @@ mod object;
 mod parser;
 mod token;
 
-pub use environment::Environment;
 pub use evaluator::Evaluator;
 pub use lexer::Lexer;
 pub use parser::Parser;

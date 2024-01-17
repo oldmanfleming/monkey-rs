@@ -8,18 +8,18 @@ pub struct Environment {
 }
 
 impl Environment {
-    pub fn new() -> Rc<RefCell<Self>> {
-        Rc::new(RefCell::new(Environment {
+    pub fn new() -> Self {
+        Environment {
             store: Self::get_hashmap_with_builtins(),
             outer: None,
-        }))
+        }
     }
 
-    pub fn new_enclosed_environment(outer: Rc<RefCell<Environment>>) -> Rc<RefCell<Self>> {
-        Rc::new(RefCell::new(Environment {
+    pub fn new_enclosed_environment(outer: Rc<RefCell<Environment>>) -> Self {
+        Environment {
             store: Self::get_hashmap_with_builtins(),
             outer: Some(outer),
-        }))
+        }
     }
 
     pub fn get(&self, name: &str) -> Option<Object> {

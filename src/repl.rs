@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use monkey_rs::{Environment, Evaluator, Lexer, Parser};
+use monkey_rs::{Evaluator, Lexer, Parser};
 
 const MONKEY_FACE: &str = r#"
             __,__
@@ -17,7 +17,7 @@ const MONKEY_FACE: &str = r#"
 "#;
 
 pub fn start() {
-    let env = Environment::new();
+    let mut evaluator = Evaluator::new();
 
     loop {
         print!(">>");
@@ -42,9 +42,7 @@ pub fn start() {
             }
         };
 
-        let evaluator = Evaluator::new();
-
-        match evaluator.eval(program, env.clone()) {
+        match evaluator.eval(program) {
             Ok(evaluated) => println!("{}", evaluated),
             Err(err) => {
                 println!("{}", MONKEY_FACE);

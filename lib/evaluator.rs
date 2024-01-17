@@ -13,17 +13,21 @@ const TRUE: Object = Object::Boolean(true);
 const FALSE: Object = Object::Boolean(false);
 const NULL: Object = Object::Null;
 
-pub struct Evaluator;
+pub struct Evaluator {
+    env: Rc<RefCell<Environment>>,
+}
 
 impl Evaluator {
     pub fn new() -> Self {
-        Self
+        Self {
+            env: Rc::new(RefCell::new(Environment::new())),
+        }
     }
 
-    pub fn eval(&self, program: Program, env: Rc<RefCell<Environment>>) -> Result<Object> {
+    pub fn eval(&mut self, program: Program) -> Result<Object> {
         let mut result = Object::Null;
         for statement in program.statements {
-            result = match self.eval_statement(statement, env.clone())? {
+            result = match self.eval_statement(statement)? {
                 Object::ReturnValue(value) => return Ok(*value),
                 object => object,
             };
@@ -31,46 +35,33 @@ impl Evaluator {
         Ok(result)
     }
 
-    fn eval_statement(
-        &self,
-        statement: Statement,
-        env: Rc<RefCell<Environment>>,
-    ) -> Result<Object> {
+    fn eval_statement(&mut self, statement: Statement) -> Result<Object> {
         let object = match statement {
-            Statement::Expression(expression) => self.eval_expression(expression, env)?,
-            Statement::Block(statements) => self.eval_block_statement(statements, env)?,
+            Statement::Expression(expression) => self.eval_expression(expression)?,
+            Statement::Block(statements) => self.eval_block_statement(statements)?,
             Statement::Return(expression) => {
-                let value = self.eval_expression(expression, env)?;
+                let value = self.eval_expression(expression)?;
                 return Ok(Object::ReturnValue(Box::new(value)));
             }
-            Statement::Let { name, value } => self.eval_let_statement(value, name, env)?,
+            Statement::Let { name, value } => self.eval_let_statement(value, name)?,
         };
         Ok(object)
     }
 
-    fn eval_let_statement(
-        &self,
-        value: Expression,
-        name: Expression,
-        env: Rc<RefCell<Environment>>,
-    ) -> Result<Object> {
-        let value = self.eval_expression(value, env.clone())?;
+    fn eval_let_statement(&mut self, value: Expression, name: Expression) -> Result<Object> {
+        let value = self.eval_expression(value)?;
         let str_name = match name {
             Expression::Identifier(name) => name,
             _ => bail!("{} not implemented", name),
         };
-        env.borrow_mut().set(&str_name, value);
+        self.env.borrow_mut().set(&str_name, value);
         Ok(Object::Null)
     }
 
-    fn eval_block_statement(
-        &self,
-        statements: Vec<Statement>,
-        env: Rc<RefCell<Environment>>,
-    ) -> Result<Object> {
+    fn eval_block_statement(&mut self, statements: Vec<Statement>) -> Result<Object> {
         let mut result = Object::Null;
         for statement in statements {
-            result = self.eval_statement(statement, env.clone())?;
+            result = self.eval_statement(statement)?;
             if let Object::ReturnValue(_) = result {
                 return Ok(result);
             }
@@ -78,17 +69,13 @@ impl Evaluator {
         Ok(result)
     }
 
-    fn eval_expression(
-        &self,
-        expression: Expression,
-        env: Rc<RefCell<Environment>>,
-    ) -> Result<Object> {
+    fn eval_expression(&mut self, expression: Expression) -> Result<Object> {
         let object = match expression {
             Expression::IntegerLiteral(value) => Object::Integer(value),
             Expression::StringLiteral(value) => Object::String(value),
             Expression::BooleanLiteral(value) => self.native_bool_to_boolean_object(value),
             Expression::Prefix { operator, right } => {
-                let right = self.eval_expression(*right, env)?;
+                let right = self.eval_expression(*right)?;
                 self.eval_prefix_expression(operator, right)?
             }
             Expression::Infix {
@@ -96,67 +83,54 @@ impl Evaluator {
                 operator,
                 right,
             } => {
-                let left = self.eval_expression(*left, env.clone())?;
-                let right = self.eval_expression(*right, env)?;
+                let left = self.eval_expression(*left)?;
+                let right = self.eval_expression(*right)?;
                 self.eval_infix_expression(left, operator, right)?
             }
             Expression::If {
                 condition,
                 consequence,
                 alternative,
-            } => self.eval_if_expression(*condition, *consequence, alternative, env)?,
-            Expression::Identifier(name) => self.eval_identifier_expression(name, env)?,
+            } => self.eval_if_expression(*condition, *consequence, alternative)?,
+            Expression::Identifier(name) => self.eval_identifier_expression(name)?,
             Expression::FunctionLiteral { parameters, body } => {
-                self.eval_function_literal(parameters, body, env)?
+                self.eval_function_literal(parameters, body)?
             }
             Expression::Call {
                 function,
                 arguments,
-            } => self.eval_call_function(function, env, arguments)?,
-            Expression::ArrayLiteral(elements) => self.eval_array_literal(elements, env)?,
-            Expression::HashLiteral(pairs) => self.eval_hash_literal(pairs, env)?,
-            Expression::Index { left, index } => self.eval_index(left, index, env)?,
+            } => self.eval_call_function(function, arguments)?,
+            Expression::ArrayLiteral(elements) => self.eval_array_literal(elements)?,
+            Expression::HashLiteral(pairs) => self.eval_hash_literal(pairs)?,
+            Expression::Index { left, index } => self.eval_index(left, index)?,
         };
         Ok(object)
     }
 
-    fn eval_hash_literal(
-        &self,
-        pairs: Vec<(Expression, Expression)>,
-        env: Rc<RefCell<Environment>>,
-    ) -> Result<Object> {
+    fn eval_hash_literal(&mut self, pairs: Vec<(Expression, Expression)>) -> Result<Object> {
         let mut hash = HashMap::new();
         for (key, value) in pairs {
-            let key = self.eval_expression(key, env.clone())?;
+            let key = self.eval_expression(key)?;
             if !key.hashable() {
                 bail!("unusable as hash key: {}", key)
             }
-            let value = self.eval_expression(value, env.clone())?;
+            let value = self.eval_expression(value)?;
             hash.insert(key, value);
         }
         Ok(Object::Hash(hash))
     }
 
-    fn eval_array_literal(
-        &self,
-        elements: Vec<Expression>,
-        env: Rc<RefCell<Environment>>,
-    ) -> Result<Object> {
+    fn eval_array_literal(&mut self, elements: Vec<Expression>) -> Result<Object> {
         let elements = elements
             .into_iter()
-            .map(|e| self.eval_expression(e, env.clone()))
+            .map(|e| self.eval_expression(e))
             .collect::<Result<Vec<Object>>>()?;
         Ok(Object::Array(elements))
     }
 
-    fn eval_index(
-        &self,
-        left: Box<Expression>,
-        index: Box<Expression>,
-        env: Rc<RefCell<Environment>>,
-    ) -> Result<Object> {
-        let left = self.eval_expression(*left, env.clone())?;
-        let index = self.eval_expression(*index, env)?;
+    fn eval_index(&mut self, left: Box<Expression>, index: Box<Expression>) -> Result<Object> {
+        let left = self.eval_expression(*left)?;
+        let index = self.eval_expression(*index)?;
         match (left.clone(), index) {
             (Object::Array(elements), Object::Integer(index)) => match elements.get(index as usize)
             {
@@ -176,47 +150,10 @@ impl Evaluator {
         }
     }
 
-    fn eval_call_function(
-        &self,
-        function: Box<Expression>,
-        env: Rc<RefCell<Environment>>,
-        arguments: Vec<Expression>,
-    ) -> Result<Object> {
-        let fn_literal = self.eval_expression(*function, env.clone())?;
-        let args_env = env.clone();
-        let args = arguments
-            .into_iter()
-            .map(move |arg| self.eval_expression(arg, args_env.clone()))
-            .collect::<Result<Vec<Object>>>()?;
-        Ok(match fn_literal {
-            Object::Function {
-                parameters,
-                body,
-                env: fn_env,
-            } => {
-                if parameters.len() != args.len() {
-                    bail!(
-                        "wrong number of arguments: want={}, got={}",
-                        parameters.len(),
-                        args.len()
-                    )
-                }
-
-                parameters.into_iter().zip(args).for_each(|(param, arg)| {
-                    fn_env.borrow_mut().set(&param, arg);
-                });
-                self.eval_statement(body, fn_env)?
-            }
-            Object::BuiltInFunction(function) => function(args)?,
-            _ => bail!("{} is not a function", fn_literal),
-        })
-    }
-
     fn eval_function_literal(
-        &self,
+        &mut self,
         parameters: Vec<Expression>,
         body: Box<Statement>,
-        env: Rc<RefCell<Environment>>,
     ) -> Result<Object> {
         Ok(Object::Function {
             parameters: parameters
@@ -227,11 +164,52 @@ impl Evaluator {
                 })
                 .collect::<Result<Vec<String>>>()?,
             body: *body,
-            env: Environment::new_enclosed_environment(env),
+            env: self.env.clone(),
         })
     }
 
-    fn eval_prefix_expression(&self, operator: Token, right: Object) -> Result<Object> {
+    fn eval_call_function(
+        &mut self,
+        function: Box<Expression>,
+        arguments: Vec<Expression>,
+    ) -> Result<Object> {
+        let fn_literal = self.eval_expression(*function)?;
+        let args = arguments
+            .into_iter()
+            .map(|arg| self.eval_expression(arg))
+            .collect::<Result<Vec<Object>>>()?;
+        Ok(match fn_literal {
+            Object::Function {
+                parameters,
+                body,
+                env,
+            } => {
+                if parameters.len() != args.len() {
+                    bail!(
+                        "wrong number of arguments: want={}, got={}",
+                        parameters.len(),
+                        args.len()
+                    )
+                }
+                let old_env = self.env.clone();
+                let mut new_env = Environment::new_enclosed_environment(env.clone());
+                parameters.into_iter().zip(args).for_each(|(param, arg)| {
+                    new_env.set(&param, arg);
+                });
+                self.env = Rc::new(RefCell::new(new_env));
+                let result = self.eval_statement(body)?;
+                self.env = old_env;
+                match result {
+                    Object::ReturnValue(value) => return Ok(*value),
+                    object => object,
+                }
+            }
+            Object::BuiltInFunction(function) => function(args)?,
+            _ => bail!("{} is not a function", fn_literal),
+        })
+    }
+
+    fn eval_prefix_expression(&mut self, operator: Token, right: Object) -> Result<Object> {
         match operator {
             Token::Bang => self.eval_bang_operator_expression(right),
             Token::Minus => self.eval_minus_prefix_operator_expression(right),
@@ -239,7 +217,7 @@ impl Evaluator {
         }
     }
 
-    fn eval_bang_operator_expression(&self, right: Object) -> Result<Object> {
+    fn eval_bang_operator_expression(&mut self, right: Object) -> Result<Object> {
         match right {
             Object::Boolean(true) => Ok(FALSE),
             Object::Boolean(false) => Ok(TRUE),
@@ -248,7 +226,7 @@ impl Evaluator {
         }
     }
 
-    fn eval_minus_prefix_operator_expression(&self, right: Object) -> Result<Object> {
+    fn eval_minus_prefix_operator_expression(&mut self, right: Object) -> Result<Object> {
         match right {
             Object::Integer(value) => Ok(Object::Integer(-value)),
             _ => Err(anyhow!("unknown operator: -{}", right)),
@@ -256,7 +234,7 @@ impl Evaluator {
     }
 
     fn eval_infix_expression(
-        &self,
+        &mut self,
         left: Object,
         operator: Token,
         right: Object,
@@ -276,7 +254,7 @@ impl Evaluator {
     }
 
     fn eval_integer_infix_expression(
-        &self,
+        &mut self,
         left: i64,
         operator: Token,
         right: i64,
@@ -295,7 +273,7 @@ impl Evaluator {
     }
 
     fn eval_boolean_infix_expression(
-        &self,
+        &mut self,
         left: bool,
         operator: Token,
         right: bool,
@@ -308,7 +286,7 @@ impl Evaluator {
     }
 
     fn eval_string_infix_expression(
-        &self,
+        &mut self,
         left: String,
         operator: Token,
         right: String,
@@ -318,7 +296,7 @@ impl Evaluator {
             _ => Err(anyhow!("unknown operator: {} {} {}", left, operator, right)),
         }
     }
-    fn native_bool_to_boolean_object(&self, input: bool) -> Object {
+    fn native_bool_to_boolean_object(&mut self, input: bool) -> Object {
         if input {
             TRUE
         } else {
@@ -327,23 +305,22 @@ impl Evaluator {
     }
 
     fn eval_if_expression(
-        &self,
+        &mut self,
         condition: Expression,
         consequence: Statement,
         alternative: Option<Box<Statement>>,
-        env: Rc<RefCell<Environment>>,
     ) -> Result<Object> {
-        let condition = self.eval_expression(condition, env.clone())?;
+        let condition = self.eval_expression(condition)?;
         if self.is_truthy(condition) {
-            self.eval_statement(consequence, env.clone())
+            self.eval_statement(consequence)
         } else if let Some(alternative) = alternative {
-            self.eval_statement(*alternative, env)
+            self.eval_statement(*alternative)
         } else {
             Ok(NULL)
         }
     }
 
-    fn is_truthy(&self, object: Object) -> bool {
+    fn is_truthy(&mut self, object: Object) -> bool {
         match object {
             Object::Null => false,
             Object::Boolean(true) => true,
@@ -352,12 +329,8 @@ impl Evaluator {
         }
     }
 
-    fn eval_identifier_expression(
-        &self,
-        name: String,
-        env: Rc<RefCell<Environment>>,
-    ) -> Result<Object> {
-        match env.borrow().get(&name) {
+    fn eval_identifier_expression(&mut self, name: String) -> Result<Object> {
+        match self.env.borrow().get(&name) {
             Some(value) => Ok(value.clone()),
             None => Err(anyhow!("identifier not found: {}", name)),
         }
@@ -369,6 +342,26 @@ mod tests {
     use super::*;
     use crate::lexer::Lexer;
     use crate::parser::Parser;
+
+    #[test]
+    fn test_fibonaccu() {
+        let input = r#"
+        let fibonacci = fn(x) {
+            if (x == 0) {
+                0
+            } else {
+                if (x == 1) {
+                    1
+                } else {
+                    fibonacci(x - 1) + fibonacci(x - 2);
+                }
+            }
+        };
+        fibonacci(2);
+        "#;
+        let evaluated = test_eval(input).unwrap();
+        assert_eq!(evaluated, Object::Integer(1));
+    }
 
     #[test]
     fn test_eval_integer_expression() {
@@ -555,7 +548,7 @@ mod tests {
                     operator: Token::Plus,
                     right: Box::new(Expression::IntegerLiteral(2)),
                 })]),
-                env: Environment::new_enclosed_environment(Environment::new()),
+                env: Rc::new(RefCell::new(Environment::new())),
             },
         )];
 
@@ -650,7 +643,7 @@ mod tests {
                             operator: Token::Plus,
                             right: Box::new(Expression::Identifier("x".to_string())),
                         })]),
-                        env: Environment::new_enclosed_environment(Environment::new()),
+                        env: Rc::new(RefCell::new(Environment::new())),
                     },
                 ]),
             ),
@@ -780,8 +773,7 @@ mod tests {
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
         let program = parser.parse_program().unwrap();
-        let env = Environment::new();
-        let evaluator = Evaluator::new();
-        evaluator.eval(program, env)
+        let mut evaluator = Evaluator::new();
+        evaluator.eval(program)
     }
 }

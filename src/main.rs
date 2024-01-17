@@ -2,7 +2,7 @@ mod repl;
 
 use anyhow::{Context, Result};
 use clap::{Parser as ClapParser, Subcommand};
-use monkey_rs::{Environment, Evaluator, Lexer, Parser};
+use monkey_rs::{Evaluator, Lexer, Parser};
 use std::{fs, path::PathBuf};
 
 #[derive(ClapParser)]
@@ -44,11 +44,9 @@ fn execute_file(path: PathBuf) -> Result<()> {
 
     let program = parser.parse_program()?;
 
-    let env = Environment::new();
+    let mut evaluator = Evaluator::new();
 
-    let evaluator = Evaluator::new();
-
-    let _ = evaluator.eval(program, env)?;
+    let _ = evaluator.eval(program)?;
 
     Ok(())
 }
