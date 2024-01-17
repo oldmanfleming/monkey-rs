@@ -21,7 +21,7 @@ pub enum Object {
     ReturnValue(Box<Object>),
     Function {
         parameters: Vec<String>,
-        body: Statement,
+        body: Box<Statement>,
         env: Rc<RefCell<Environment>>,
     },
     BuiltInFunction(fn(Vec<Object>) -> Result<Object>),

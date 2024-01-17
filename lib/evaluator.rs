@@ -27,7 +27,7 @@ impl Evaluator {
     pub fn eval(&mut self, program: Program) -> Result<Object> {
         let mut result = Object::Null;
         for statement in program.statements {
-            result = match self.eval_statement(statement)? {
+            result = match self.eval_statement(Box::new(statement))? {
                 Object::ReturnValue(value) => return Ok(*value),
                 object => object,
             };
@@ -35,22 +35,28 @@ impl Evaluator {
         Ok(result)
     }
 
-    fn eval_statement(&mut self, statement: Statement) -> Result<Object> {
-        let object = match statement {
-            Statement::Expression(expression) => self.eval_expression(expression)?,
+    fn eval_statement(&mut self, statement: Box<Statement>) -> Result<Object> {
+        let object = match *statement {
+            Statement::Expression(expression) => self.eval_expression(Box::new(expression))?,
             Statement::Block(statements) => self.eval_block_statement(statements)?,
             Statement::Return(expression) => {
-                let value = self.eval_expression(expression)?;
+                let value = self.eval_expression(Box::new(expression))?;
                 return Ok(Object::ReturnValue(Box::new(value)));
             }
-            Statement::Let { name, value } => self.eval_let_statement(value, name)?,
+            Statement::Let { name, value } => {
+                self.eval_let_statement(Box::new(value), Box::new(name))?
+            }
         };
         Ok(object)
     }
 
-    fn eval_let_statement(&mut self, value: Expression, name: Expression) -> Result<Object> {
+    fn eval_let_statement(
+        &mut self,
+        value: Box<Expression>,
+        name: Box<Expression>,
+    ) -> Result<Object> {
         let value = self.eval_expression(value)?;
-        let str_name = match name {
+        let str_name = match *name {
             Expression::Identifier(name) => name,
             _ => bail!("{} not implemented", name),
         };
@@ -61,7 +67,7 @@ impl Evaluator {
     fn eval_block_statement(&mut self, statements: Vec<Statement>) -> Result<Object> {
         let mut result = Object::Null;
         for statement in statements {
-            result = self.eval_statement(statement)?;
+            result = self.eval_statement(Box::new(statement))?;
             if let Object::ReturnValue(_) = result {
                 return Ok(result);
             }
@@ -69,13 +75,13 @@ impl Evaluator {
         Ok(result)
     }
 
-    fn eval_expression(&mut self, expression: Expression) -> Result<Object> {
-        let object = match expression {
+    fn eval_expression(&mut self, expression: Box<Expression>) -> Result<Object> {
+        let object = match *expression {
             Expression::IntegerLiteral(value) => Object::Integer(value),
             Expression::StringLiteral(value) => Object::String(value),
             Expression::BooleanLiteral(value) => self.native_bool_to_boolean_object(value),
             Expression::Prefix { operator, right } => {
-                let right = self.eval_expression(*right)?;
+                let right = self.eval_expression(right)?;
                 self.eval_prefix_expression(operator, right)?
             }
             Expression::Infix {
@@ -83,15 +89,15 @@ impl Evaluator {
                 operator,
                 right,
             } => {
-                let left = self.eval_expression(*left)?;
-                let right = self.eval_expression(*right)?;
+                let left = self.eval_expression(left)?;
+                let right = self.eval_expression(right)?;
                 self.eval_infix_expression(left, operator, right)?
             }
             Expression::If {
                 condition,
                 consequence,
                 alternative,
-            } => self.eval_if_expression(*condition, *consequence, alternative)?,
+            } => self.eval_if_expression(condition, consequence, alternative)?,
             Expression::Identifier(name) => self.eval_identifier_expression(name)?,
             Expression::FunctionLiteral { parameters, body } => {
                 self.eval_function_literal(parameters, body)?
@@ -110,11 +116,11 @@ impl Evaluator {
     fn eval_hash_literal(&mut self, pairs: Vec<(Expression, Expression)>) -> Result<Object> {
         let mut hash = HashMap::new();
         for (key, value) in pairs {
-            let key = self.eval_expression(key)?;
+            let key = self.eval_expression(Box::new(key))?;
             if !key.hashable() {
                 bail!("unusable as hash key: {}", key)
             }
-            let value = self.eval_expression(value)?;
+            let value = self.eval_expression(Box::new(value))?;
             hash.insert(key, value);
         }
         Ok(Object::Hash(hash))
@@ -123,14 +129,14 @@ impl Evaluator {
     fn eval_array_literal(&mut self, elements: Vec<Expression>) -> Result<Object> {
         let elements = elements
             .into_iter()
-            .map(|e| self.eval_expression(e))
+            .map(|e| self.eval_expression(Box::new(e)))
             .collect::<Result<Vec<Object>>>()?;
         Ok(Object::Array(elements))
     }
 
     fn eval_index(&mut self, left: Box<Expression>, index: Box<Expression>) -> Result<Object> {
-        let left = self.eval_expression(*left)?;
-        let index = self.eval_expression(*index)?;
+        let left = self.eval_expression(left)?;
+        let index = self.eval_expression(index)?;
         match (left.clone(), index) {
             (Object::Array(elements), Object::Integer(index)) => match elements.get(index as usize)
             {
@@ -163,7 +169,7 @@ impl Evaluator {
                     _ => Err(anyhow!("{} not implemented", p)),
                 })
                 .collect::<Result<Vec<String>>>()?,
-            body: *body,
+            body,
             env: self.env.clone(),
         })
     }
@@ -173,10 +179,10 @@ impl Evaluator {
         function: Box<Expression>,
         arguments: Vec<Expression>,
     ) -> Result<Object> {
-        let fn_literal = self.eval_expression(*function)?;
+        let fn_literal = self.eval_expression(function)?;
         let args = arguments
             .into_iter()
-            .map(|arg| self.eval_expression(arg))
+            .map(|arg| self.eval_expression(Box::new(arg)))
             .collect::<Result<Vec<Object>>>()?;
         Ok(match fn_literal {
             Object::Function {
@@ -306,15 +312,15 @@ impl Evaluator {
 
     fn eval_if_expression(
         &mut self,
-        condition: Expression,
-        consequence: Statement,
+        condition: Box<Expression>,
+        consequence: Box<Statement>,
         alternative: Option<Box<Statement>>,
     ) -> Result<Object> {
         let condition = self.eval_expression(condition)?;
         if self.is_truthy(condition) {
             self.eval_statement(consequence)
         } else if let Some(alternative) = alternative {
-            self.eval_statement(*alternative)
+            self.eval_statement(alternative)
         } else {
             Ok(NULL)
         }
@@ -344,7 +350,7 @@ mod tests {
     use crate::parser::Parser;
 
     #[test]
-    fn test_fibonaccu() {
+    fn test_fibonacci() {
         let input = r#"
         let fibonacci = fn(x) {
             if (x == 0) {
@@ -357,10 +363,10 @@ mod tests {
                 }
             }
         };
-        fibonacci(2);
+        fibonacci(10);
         "#;
         let evaluated = test_eval(input).unwrap();
-        assert_eq!(evaluated, Object::Integer(1));
+        assert_eq!(evaluated, Object::Integer(55));
     }
 
     #[test]
@@ -543,11 +549,13 @@ mod tests {
             "fn(x) { x + 2; };",
             Object::Function {
                 parameters: vec!["x".to_string()],
-                body: Statement::Block(vec![Statement::Expression(Expression::Infix {
-                    left: Box::new(Expression::Identifier("x".to_string())),
-                    operator: Token::Plus,
-                    right: Box::new(Expression::IntegerLiteral(2)),
-                })]),
+                body: Box::new(Statement::Block(vec![Statement::Expression(
+                    Expression::Infix {
+                        left: Box::new(Expression::Identifier("x".to_string())),
+                        operator: Token::Plus,
+                        right: Box::new(Expression::IntegerLiteral(2)),
+                    },
+                )])),
                 env: Rc::new(RefCell::new(Environment::new())),
             },
         )];
@@ -638,11 +646,13 @@ mod tests {
                     Object::Boolean(true),
                     Object::Function {
                         parameters: vec!["x".to_string()],
-                        body: Statement::Block(vec![Statement::Expression(Expression::Infix {
-                            left: Box::new(Expression::Identifier("x".to_string())),
-                            operator: Token::Plus,
-                            right: Box::new(Expression::Identifier("x".to_string())),
-                        })]),
+                        body: Box::new(Statement::Block(vec![Statement::Expression(
+                            Expression::Infix {
+                                left: Box::new(Expression::Identifier("x".to_string())),
+                                operator: Token::Plus,
+                                right: Box::new(Expression::Identifier("x".to_string())),
+                            },
+                        )])),
                         env: Rc::new(RefCell::new(Environment::new())),
                     },
                 ]),
