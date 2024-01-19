@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.79"
+byteorder = "1.5.0"
 clap = { version = "4.4.12", features = ["derive"] }
 
 [lib]
