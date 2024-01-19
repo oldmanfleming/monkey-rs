@@ -1,5 +1,6 @@
-use crate::{builtins::Builtins, object::Object};
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
+
+use super::{builtins::Builtins, object::Object};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Environment {

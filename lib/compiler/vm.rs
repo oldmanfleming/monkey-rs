@@ -3,9 +3,7 @@ use std::io::Cursor;
 use anyhow::{bail, Result};
 use byteorder::ReadBytesExt;
 
-use crate::object::Object;
-
-use super::{code::Opcode, compiler::Bytecode};
+use super::{code::Opcode, compiler::Bytecode, object::Object};
 
 const STACK_SIZE: usize = 2048;
 const NULL: Object = Object::Null;

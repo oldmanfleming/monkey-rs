@@ -1,6 +1,6 @@
 use anyhow::{anyhow, bail, Result};
 
-use crate::object::Object;
+use super::object::Object;
 
 pub struct Builtins;
 

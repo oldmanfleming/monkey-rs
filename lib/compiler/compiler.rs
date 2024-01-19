@@ -2,11 +2,13 @@ use anyhow::Result;
 
 use crate::{
     ast::{Expression, Program, Statement},
-    object::Object,
     token::Token,
 };
 
-use super::code::{Instructions, Opcode};
+use super::{
+    code::{Instructions, Opcode},
+    object::Object,
+};
 
 pub struct Compiler {
     instructions: Instructions,

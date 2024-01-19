@@ -4,10 +4,10 @@ use anyhow::{anyhow, bail, Result};
 
 use crate::{
     ast::{Expression, Program, Statement},
-    environment::Environment,
-    object::Object,
     token::Token,
 };
+
+use super::{environment::Environment, object::Object};
 
 const TRUE: Object = Object::Boolean(true);
 const FALSE: Object = Object::Boolean(false);

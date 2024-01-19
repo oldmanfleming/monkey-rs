@@ -8,7 +8,9 @@ use std::{
 
 use anyhow::Result;
 
-use crate::{ast::Statement, environment::Environment};
+use crate::ast::Statement;
+
+use super::environment::Environment;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Object {
