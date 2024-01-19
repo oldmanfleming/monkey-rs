@@ -1,8 +1,8 @@
 mod repl;
 
 use anyhow::{Context, Result};
-use clap::{Parser as ClapParser, Subcommand};
-use monkey_rs::{Evaluator, Lexer, Parser};
+use clap::{Parser as ClapParser, Subcommand, ValueEnum};
+use monkey_rs::{Compiler, Evaluator, Lexer, Parser, VirtualMachine};
 use std::{fs, path::PathBuf};
 
 #[derive(ClapParser)]
@@ -10,6 +10,9 @@ use std::{fs, path::PathBuf};
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
+
+    #[arg(short, long, value_enum)]
+    engine: Option<Engine>,
 }
 
 #[derive(Subcommand)]
@@ -20,22 +23,33 @@ enum Commands {
     },
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, ValueEnum)]
+enum Engine {
+    Interpreter,
+    Compiler,
+}
+
 fn main() {
     let cli = Cli::parse();
+    let engine = match cli.engine {
+        Some(engine) => engine,
+        None => Engine::Compiler,
+    };
+
     match cli.command {
         Some(Commands::Run { path }) => {
-            execute_file(path).unwrap_or_else(|err| {
+            execute_file(path, engine).unwrap_or_else(|err| {
                 println!("{}", err);
                 std::process::exit(1);
             });
         }
         None => {
-            repl::start();
+            repl::start(engine);
         }
     }
 }
 
-fn execute_file(path: PathBuf) -> Result<()> {
+fn execute_file(path: PathBuf, engine: Engine) -> Result<()> {
     let input = fs::read_to_string(&path).context(format!("Failed to read {}", path.display()))?;
 
     let lexer = Lexer::new(&input);
@@ -44,9 +58,24 @@ fn execute_file(path: PathBuf) -> Result<()> {
 
     let program = parser.parse_program()?;
 
-    let mut evaluator = Evaluator::new();
+    match engine {
+        Engine::Interpreter => {
+            let mut evaluator = Evaluator::new();
 
-    let _ = evaluator.eval(program)?;
+            let _ = evaluator.eval(program)?;
+        }
+        Engine::Compiler => {
+            let mut compiler = Compiler::new();
+
+            compiler.compile(program)?;
+
+            let bytecode = compiler.bytecode();
+
+            let mut vm = VirtualMachine::new();
+
+            vm.run(bytecode)?;
+        }
+    }
 
     Ok(())
 }

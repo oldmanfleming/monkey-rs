@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use byteorder::ReadBytesExt;
 
 use super::{code::Opcode, compiler::Bytecode, object::Object};
@@ -21,7 +21,7 @@ impl VirtualMachine {
         }
     }
 
-    pub fn run(&mut self, bytecode: Bytecode) -> Result<()> {
+    pub fn run(&mut self, bytecode: Bytecode) -> Result<Object> {
         let mut instructions = Cursor::new(bytecode.instructions.inner());
 
         while !instructions.is_empty() {
@@ -45,7 +45,7 @@ impl VirtualMachine {
             }
         }
 
-        Ok(())
+        Ok(self.stack_top().ok_or(anyhow!("no stack result"))?.clone())
     }
 
     fn push(&mut self, object: Object) -> Result<()> {

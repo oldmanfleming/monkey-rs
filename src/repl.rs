@@ -1,6 +1,8 @@
 use std::io::{self, Write};
 
-use monkey_rs::{Evaluator, Lexer, Parser};
+use monkey_rs::{Compiler, Evaluator, Lexer, Parser, VirtualMachine};
+
+use crate::Engine;
 
 const MONKEY_FACE: &str = r#"
             __,__
@@ -16,8 +18,9 @@ const MONKEY_FACE: &str = r#"
            '-----'
 "#;
 
-pub fn start() {
+pub fn start(engine: Engine) {
     let mut evaluator = Evaluator::new();
+    let mut vm = VirtualMachine::new();
 
     loop {
         print!(">>");
@@ -42,7 +45,28 @@ pub fn start() {
             }
         };
 
-        match evaluator.eval(program) {
+        let result = match engine {
+            Engine::Interpreter => evaluator.eval(program).map(|obj| obj.to_string()),
+            Engine::Compiler => {
+                let mut compiler = Compiler::new();
+
+                match compiler.compile(program) {
+                    Ok(_) => {}
+                    Err(err) => {
+                        println!("{}", MONKEY_FACE);
+                        println!("Woops! We ran into some monkey business here!");
+                        println!("compile error: {}", err);
+                        continue;
+                    }
+                }
+
+                let bytecode = compiler.bytecode();
+
+                vm.run(bytecode).map(|obj| obj.to_string())
+            }
+        };
+
+        match result {
             Ok(evaluated) => println!("{}", evaluated),
             Err(err) => {
                 println!("{}", MONKEY_FACE);
