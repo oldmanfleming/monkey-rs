@@ -55,7 +55,7 @@ impl fmt::Display for Instructions {
         let mut instructions = Cursor::new(&self.0);
         while !instructions.is_empty() {
             write!(f, "{:04} ", instructions.position())?;
-            let instruction = Opcode::from(instructions.read_u8().unwrap());
+            let instruction = Opcode::try_from(instructions.read_u8().unwrap()).unwrap();
             write!(f, "{}", instruction.name())?;
 
             for width in instruction.operand_width().iter() {
@@ -112,13 +112,16 @@ impl Opcode {
     }
 }
 
-impl From<u8> for Opcode {
-    fn from(value: u8) -> Self {
-        match value {
+impl TryFrom<u8> for Opcode {
+    type Error = anyhow::Error;
+
+    fn try_from(value: u8) -> Result<Self> {
+        let opcode = match value {
             0 => Opcode::Constant,
             1 => Opcode::Add,
-            _ => panic!("unknown opcode: {}", value),
-        }
+            _ => bail!("unknown opcode: {}", value),
+        };
+        Ok(opcode)
     }
 }
 

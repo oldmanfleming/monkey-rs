@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 
 use crate::{
     ast::{Expression, Program, Statement},
@@ -59,7 +59,7 @@ impl Compiler {
 
                 match operator {
                     Token::Plus => self.emit(Opcode::Add, vec![])?,
-                    _ => todo!(),
+                    _ => bail!("unimplemented operator: {:?}", operator),
                 };
             }
             Expression::IntegerLiteral(value) => {
@@ -67,7 +67,7 @@ impl Compiler {
                 self.constants.push(integer);
                 self.emit(Opcode::Constant, vec![self.constants.len() - 1])?;
             }
-            _ => todo!(),
+            _ => bail!("unimplemented expression: {:?}", expression),
         }
 
         Ok(())

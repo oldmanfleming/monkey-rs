@@ -25,7 +25,7 @@ impl VirtualMachine {
         let mut instructions = Cursor::new(bytecode.instructions.inner());
 
         while !instructions.is_empty() {
-            let opcode = Opcode::from(instructions.read_u8()?);
+            let opcode = Opcode::try_from(instructions.read_u8()?)?;
             match opcode {
                 Opcode::Constant => {
                     let constant_index = instructions.read_u16::<byteorder::BigEndian>()? as usize;
@@ -39,7 +39,9 @@ impl VirtualMachine {
                         (Object::Integer(left), Object::Integer(right)) => {
                             self.push(Object::Integer(left + right))?
                         }
-                        _ => todo!(),
+                        (left, right) => {
+                            bail!("unsupported types for add: {:?} + {:?}", left, right)
+                        }
                     }
                 }
             }
