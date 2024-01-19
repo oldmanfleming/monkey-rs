@@ -40,6 +40,7 @@ impl Compiler {
         match statement {
             Statement::Expression(expression) => {
                 self.compile_expression(expression)?;
+                self.emit(Opcode::Pop, vec![])?;
             }
             _ => todo!(),
         }
@@ -94,15 +95,28 @@ mod tests {
 
     #[test]
     fn test_compile_integer_arithmetic() -> Result<()> {
-        let tests = vec![(
-            "1 + 2",
-            vec![Object::Integer(1), Object::Integer(2)],
-            Instructions::from(vec![
-                Instructions::make(Opcode::Constant, vec![0])?,
-                Instructions::make(Opcode::Constant, vec![1])?,
-                Instructions::make(Opcode::Add, vec![])?,
-            ]),
-        )];
+        let tests = vec![
+            (
+                "1 + 2",
+                vec![Object::Integer(1), Object::Integer(2)],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::Constant, vec![0])?,
+                    Instructions::make(Opcode::Constant, vec![1])?,
+                    Instructions::make(Opcode::Add, vec![])?,
+                    Instructions::make(Opcode::Pop, vec![])?,
+                ]),
+            ),
+            (
+                "1; 2",
+                vec![Object::Integer(1), Object::Integer(2)],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::Constant, vec![0])?,
+                    Instructions::make(Opcode::Pop, vec![])?,
+                    Instructions::make(Opcode::Constant, vec![1])?,
+                    Instructions::make(Opcode::Pop, vec![])?,
+                ]),
+            ),
+        ];
 
         for (input, expected_constants, expected_instructions) in tests {
             run_compiler_tests(input, expected_constants, expected_instructions);

@@ -44,10 +44,16 @@ impl VirtualMachine {
                         }
                     }
                 }
+                Opcode::Pop => {
+                    self.pop()?;
+                }
             }
         }
 
-        Ok(self.stack_top().ok_or(anyhow!("no stack result"))?.clone())
+        Ok(self
+            .last_popped_elem()
+            .ok_or(anyhow!("no stack result"))?
+            .clone())
     }
 
     fn push(&mut self, object: Object) -> Result<()> {
@@ -70,8 +76,8 @@ impl VirtualMachine {
         Ok(self.stack[self.stack_pointer].clone())
     }
 
-    pub fn stack_top(&self) -> Option<&Object> {
-        self.stack.get(self.stack_pointer - 1)
+    pub fn last_popped_elem(&self) -> Option<&Object> {
+        self.stack.get(self.stack_pointer)
     }
 }
 
@@ -106,7 +112,7 @@ mod tests {
         let mut vm = VirtualMachine::new();
         vm.run(bytecode).unwrap();
 
-        test_expected_object(&expected, vm.stack_top().unwrap());
+        test_expected_object(&expected, vm.last_popped_elem().unwrap());
     }
 
     fn test_expected_object(expected: &Object, actual: &Object) {

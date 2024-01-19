@@ -88,6 +88,7 @@ impl fmt::Display for Instructions {
 pub enum Opcode {
     Constant,
     Add,
+    Pop,
 }
 
 impl Opcode {
@@ -95,6 +96,7 @@ impl Opcode {
         match self {
             Opcode::Constant => "Constant",
             Opcode::Add => "Add",
+            Opcode::Pop => "Pop",
         }
     }
 
@@ -108,6 +110,7 @@ impl Opcode {
         match self {
             Opcode::Constant => vec![2],
             Opcode::Add => vec![],
+            Opcode::Pop => vec![],
         }
     }
 }
@@ -119,6 +122,7 @@ impl TryFrom<u8> for Opcode {
         let opcode = match value {
             0 => Opcode::Constant,
             1 => Opcode::Add,
+            2 => Opcode::Pop,
             _ => bail!("unknown opcode: {}", value),
         };
         Ok(opcode)
@@ -130,6 +134,7 @@ impl From<Opcode> for u8 {
         match value {
             Opcode::Constant => 0,
             Opcode::Add => 1,
+            Opcode::Pop => 2,
         }
     }
 }
