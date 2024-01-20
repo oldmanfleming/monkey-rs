@@ -56,7 +56,13 @@ impl VirtualMachine {
                     Opcode::Add => left + right,
                     Opcode::Sub => left - right,
                     Opcode::Mul => left * right,
-                    Opcode::Div => left / right,
+                    Opcode::Div => {
+                        if right == 0 {
+                            bail!("division by zero");
+                        }
+
+                        left / right
+                    }
                     _ => bail!("unknown integer operator: {:?}", opcode),
                 };
                 self.push(Object::Integer(int))?
