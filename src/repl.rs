@@ -1,8 +1,8 @@
 use std::io::{self, Write};
 
-use monkey_rs::{Compiler, Evaluator, Lexer, Parser, VirtualMachine};
+use monkey_rs::{new_compiler, new_interpreter};
 
-use crate::Engine;
+use crate::EngineType;
 
 const MONKEY_FACE: &str = r#"
             __,__
@@ -18,9 +18,11 @@ const MONKEY_FACE: &str = r#"
            '-----'
 "#;
 
-pub fn start(engine: Engine) {
-    let mut evaluator = Evaluator::new();
-    let mut vm = VirtualMachine::new();
+pub fn start(engine_type: EngineType) {
+    let mut engine = match engine_type {
+        EngineType::Interpreter => new_interpreter(),
+        EngineType::Compiler => new_compiler(),
+    };
 
     loop {
         print!(">>");
@@ -32,42 +34,8 @@ pub fn start(engine: Engine) {
             .read_line(&mut input)
             .expect("Failed to read line");
 
-        let lexer = Lexer::new(&input);
-        let mut parser = Parser::new(lexer);
-
-        let program = match parser.parse_program() {
-            Ok(program) => program,
-            Err(err) => {
-                println!("{}", MONKEY_FACE);
-                println!("Woops! We ran into some monkey business here!");
-                println!("parse error: {}", err);
-                continue;
-            }
-        };
-
-        let result = match engine {
-            Engine::Interpreter => evaluator.eval(program).map(|obj| obj.to_string()),
-            Engine::Compiler => {
-                let mut compiler = Compiler::new();
-
-                match compiler.compile(program) {
-                    Ok(_) => {}
-                    Err(err) => {
-                        println!("{}", MONKEY_FACE);
-                        println!("Woops! We ran into some monkey business here!");
-                        println!("compile error: {}", err);
-                        continue;
-                    }
-                }
-
-                let bytecode = compiler.bytecode();
-
-                vm.run(bytecode).map(|obj| obj.to_string())
-            }
-        };
-
-        match result {
-            Ok(evaluated) => println!("{}", evaluated),
+        match engine.run(&input) {
+            Ok(output) => println!("{}", output),
             Err(err) => {
                 println!("{}", MONKEY_FACE);
                 println!("Woops! We ran into some monkey business here!");

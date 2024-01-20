@@ -2,7 +2,7 @@ mod repl;
 
 use anyhow::{Context, Result};
 use clap::{Parser as ClapParser, Subcommand, ValueEnum};
-use monkey_rs::{Compiler, Evaluator, Lexer, Parser, VirtualMachine};
+use monkey_rs::{new_compiler, new_interpreter};
 use std::{fs, path::PathBuf};
 
 #[derive(ClapParser)]
@@ -12,7 +12,7 @@ struct Cli {
     command: Option<Commands>,
 
     #[arg(short, long, value_enum)]
-    engine: Option<Engine>,
+    engine: Option<EngineType>,
 }
 
 #[derive(Subcommand)]
@@ -24,7 +24,7 @@ enum Commands {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, ValueEnum)]
-enum Engine {
+enum EngineType {
     Interpreter,
     Compiler,
 }
@@ -33,7 +33,7 @@ fn main() {
     let cli = Cli::parse();
     let engine = match cli.engine {
         Some(engine) => engine,
-        None => Engine::Compiler,
+        None => EngineType::Compiler,
     };
 
     match cli.command {
@@ -49,33 +49,15 @@ fn main() {
     }
 }
 
-fn execute_file(path: PathBuf, engine: Engine) -> Result<()> {
+fn execute_file(path: PathBuf, engine_type: EngineType) -> Result<()> {
     let input = fs::read_to_string(&path).context(format!("Failed to read {}", path.display()))?;
 
-    let lexer = Lexer::new(&input);
+    let mut engine = match engine_type {
+        EngineType::Interpreter => new_interpreter(),
+        EngineType::Compiler => new_compiler(),
+    };
 
-    let mut parser = Parser::new(lexer);
-
-    let program = parser.parse_program()?;
-
-    match engine {
-        Engine::Interpreter => {
-            let mut evaluator = Evaluator::new();
-
-            let _ = evaluator.eval(program)?;
-        }
-        Engine::Compiler => {
-            let mut compiler = Compiler::new();
-
-            compiler.compile(program)?;
-
-            let bytecode = compiler.bytecode();
-
-            let mut vm = VirtualMachine::new();
-
-            vm.run(bytecode)?;
-        }
-    }
+    engine.run(&input)?;
 
     Ok(())
 }

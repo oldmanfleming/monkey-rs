@@ -42,7 +42,7 @@ impl Compiler {
                 self.compile_expression(expression)?;
                 self.emit(Opcode::Pop, vec![])?;
             }
-            _ => todo!(),
+            _ => bail!("unimplemented statement: {}", statement),
         }
 
         Ok(())
