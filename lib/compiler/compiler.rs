@@ -13,6 +13,8 @@ use super::{
 pub struct Compiler {
     instructions: Instructions,
     constants: Vec<Object>,
+    last_instruction: Option<(Opcode, usize)>,
+    prev_instruction: Option<(Opcode, usize)>,
 }
 
 pub struct Bytecode {
@@ -25,6 +27,15 @@ impl Compiler {
         Self {
             instructions: Instructions::new(),
             constants: vec![],
+            last_instruction: None,
+            prev_instruction: None,
+        }
+    }
+
+    pub fn bytecode(self) -> Bytecode {
+        Bytecode {
+            instructions: self.instructions,
+            constants: self.constants,
         }
     }
 
@@ -36,11 +47,26 @@ impl Compiler {
         Ok(())
     }
 
+    fn emit(&mut self, opcode: Opcode, operands: Vec<usize>) -> Result<usize> {
+        let instruction = Instructions::make(opcode.clone(), operands)?;
+        let pos = self.instructions.extend(instruction);
+
+        self.prev_instruction = self.last_instruction.clone();
+        self.last_instruction = Some((opcode, pos));
+
+        Ok(pos)
+    }
+
     fn compile_statement(&mut self, statement: Statement) -> Result<()> {
         match statement {
             Statement::Expression(expression) => {
                 self.compile_expression(expression)?;
                 self.emit(Opcode::Pop, vec![])?;
+            }
+            Statement::Block(statements) => {
+                for statement in statements.into_iter() {
+                    self.compile_statement(statement)?;
+                }
             }
             _ => bail!("unimplemented statement: {}", statement),
         }
@@ -50,13 +76,59 @@ impl Compiler {
 
     fn compile_expression(&mut self, expression: Expression) -> Result<()> {
         match expression {
+            Expression::If {
+                condition,
+                consequence,
+                alternative,
+            } => {
+                self.compile_expression(*condition)?;
+
+                // We add the jump instruction with a dummy value because we don't know how far we
+                // have to jump until we evaluate the number of instructions in the consequence block
+                let jump_pos = self.emit(Opcode::JumpNotTruthy, vec![9999])?;
+
+                self.compile_statement(*consequence)?;
+
+                // remove the last instruction from the consequence block if it's a pop
+                // because we do want to keep the last value on the stack after evaluating the consequence
+                if let Some((Opcode::Pop, pos)) = self.last_instruction.clone() {
+                    self.instructions.drain_at(pos);
+                    self.last_instruction = self.prev_instruction.clone();
+                }
+
+                // This is the jump over the else block that the if block will take
+                let alternative_jump_pos = self.emit(Opcode::Jump, vec![9999])?;
+
+                // update the jump position of the falsey jump to point to the start of the alternative block
+                self.instructions
+                    .change_u16_operand(jump_pos, self.instructions.inner().len())?;
+
+                match alternative {
+                    Some(alternative) => {
+                        self.compile_statement(*alternative)?;
+
+                        if let Some((Opcode::Pop, pos)) = self.last_instruction.clone() {
+                            self.instructions.drain_at(pos);
+                            self.last_instruction = self.prev_instruction.clone();
+                        }
+                    }
+                    None => {
+                        // if there is no alternative block, and the if block is not evaluated, we push a null value onto the stack
+                        self.emit(Opcode::Null, vec![])?;
+                    }
+                }
+
+                // update the jump position of the alternative jump to point to the end of the alternative block
+                self.instructions
+                    .change_u16_operand(alternative_jump_pos, self.instructions.inner().len())?;
+            }
             Expression::Infix {
                 left,
                 operator,
                 right,
             } => {
                 // The order of the operands is important for the VM.
-                // We re-order the operands for Lt to create an Gt (compiler fun).
+                // We re-order the operands for Lt to create a Gt (compiler fun).
                 // E.g 1 < 2 => 2 > 1
                 if operator == Token::Lt {
                     self.compile_expression(*right)?;
@@ -102,18 +174,6 @@ impl Compiler {
         }
 
         Ok(())
-    }
-
-    fn emit(&mut self, opcode: Opcode, operands: Vec<usize>) -> Result<usize> {
-        let instruction = Instructions::make(opcode, operands)?;
-        Ok(self.instructions.extend(instruction))
-    }
-
-    pub fn bytecode(self) -> Bytecode {
-        Bytecode {
-            instructions: self.instructions,
-            constants: self.constants,
-        }
     }
 }
 
@@ -287,6 +347,48 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_conditionals() {
+        let tests = vec![
+            (
+                "if (true) { 10 }; 3333;",
+                vec![Object::Integer(10), Object::Integer(3333)],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::True, vec![]).unwrap(),
+                    Instructions::make(Opcode::JumpNotTruthy, vec![10]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Jump, vec![11]).unwrap(),
+                    Instructions::make(Opcode::Null, vec![]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![1]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                ]),
+            ),
+            (
+                "if (true) { 10 } else { 20 }; 3333;",
+                vec![
+                    Object::Integer(10),
+                    Object::Integer(20),
+                    Object::Integer(3333),
+                ],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::True, vec![]).unwrap(),
+                    Instructions::make(Opcode::JumpNotTruthy, vec![10]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Jump, vec![13]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![1]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![2]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                ]),
+            ),
+        ];
+
+        for (input, expected_constants, expected_instructions) in tests {
+            run_compiler_tests(input, expected_constants, expected_instructions);
+        }
+    }
+
     fn run_compiler_tests(
         input: &str,
         expected_constants: Vec<Object>,
@@ -311,13 +413,15 @@ mod tests {
         assert_eq!(
             expected_data.len(),
             actual_data.len(),
-            "wrong instruction length",
+            "wrong instruction length, want=\n{}, got=\n{}",
+            expected,
+            actual
         );
 
         for (i, instruction) in expected_data.iter().enumerate() {
             assert_eq!(
                 actual_data[i], *instruction,
-                "wrong instruction at {}, wanted={}, got={}",
+                "wrong instruction at {}, wanted=\n{}, got=\n{}",
                 i, expected, actual
             );
         }

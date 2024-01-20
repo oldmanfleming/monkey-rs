@@ -26,6 +26,17 @@ impl Instructions {
         instr_start_pos
     }
 
+    pub fn drain_at(&mut self, pos: usize) {
+        self.0.drain(pos..);
+    }
+
+    pub fn change_u16_operand(&mut self, pos: usize, operand: usize) -> Result<()> {
+        let mut instructions = Cursor::new(&mut self.0);
+        instructions.set_position((pos + 1) as u64);
+        instructions.write_u16::<byteorder::BigEndian>(operand.try_into()?)?;
+        Ok(())
+    }
+
     /// Convert an opcode and a vector of operands into a byte vector instruction
     pub fn make(opcode: Opcode, operands: Vec<usize>) -> Result<Vec<u8>> {
         let widths = opcode.operand_width();
@@ -103,6 +114,11 @@ pub enum Opcode {
 
     Minus,
     Bang,
+
+    JumpNotTruthy,
+    Jump,
+
+    Null,
 }
 
 impl Opcode {
@@ -121,6 +137,9 @@ impl Opcode {
             Opcode::GreaterThan => "GreaterThan",
             Opcode::Minus => "Minus",
             Opcode::Bang => "Bang",
+            Opcode::JumpNotTruthy => "JumpNotTruthy",
+            Opcode::Jump => "Jump",
+            Opcode::Null => "Null",
         }
     }
 
@@ -145,6 +164,9 @@ impl Opcode {
             Opcode::GreaterThan => vec![],
             Opcode::Minus => vec![],
             Opcode::Bang => vec![],
+            Opcode::JumpNotTruthy => vec![2],
+            Opcode::Jump => vec![2],
+            Opcode::Null => vec![],
         }
     }
 }
@@ -167,6 +189,9 @@ impl TryFrom<u8> for Opcode {
             10 => Opcode::GreaterThan,
             11 => Opcode::Minus,
             12 => Opcode::Bang,
+            13 => Opcode::JumpNotTruthy,
+            14 => Opcode::Jump,
+            15 => Opcode::Null,
             _ => bail!("unknown opcode: {}", value),
         };
         Ok(opcode)
@@ -189,6 +214,9 @@ impl From<Opcode> for u8 {
             Opcode::GreaterThan => 10,
             Opcode::Minus => 11,
             Opcode::Bang => 12,
+            Opcode::JumpNotTruthy => 13,
+            Opcode::Jump => 14,
+            Opcode::Null => 15,
         }
     }
 }
@@ -224,6 +252,9 @@ mod tests {
             Instructions::make(Opcode::Equal, vec![]).unwrap(),
             Instructions::make(Opcode::NotEqual, vec![]).unwrap(),
             Instructions::make(Opcode::GreaterThan, vec![]).unwrap(),
+            Instructions::make(Opcode::JumpNotTruthy, vec![18]).unwrap(),
+            Instructions::make(Opcode::Jump, vec![65535]).unwrap(),
+            Instructions::make(Opcode::Null, vec![]).unwrap(),
         ]);
 
         let expected = r#"0000 Add
@@ -237,6 +268,9 @@ mod tests {
 0012 Equal
 0013 NotEqual
 0014 GreaterThan
+0015 JumpNotTruthy 18
+0018 Jump 65535
+0021 Null
 "#;
 
         assert_eq!(instructions.to_string(), expected);

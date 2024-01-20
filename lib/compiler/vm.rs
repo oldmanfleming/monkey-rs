@@ -63,6 +63,20 @@ impl VirtualMachine {
                 Opcode::Bang => {
                     self.execute_bang_operator()?;
                 }
+                Opcode::Jump => {
+                    let position = instructions.read_u16::<byteorder::BigEndian>()? as u64;
+                    instructions.set_position(position);
+                }
+                Opcode::JumpNotTruthy => {
+                    let position = instructions.read_u16::<byteorder::BigEndian>()? as u64;
+                    let condition = self.pop()?;
+                    if !self.is_truthy(condition) {
+                        instructions.set_position(position);
+                    }
+                }
+                Opcode::Null => {
+                    self.push(NULL)?;
+                }
             }
         }
 
@@ -143,11 +157,20 @@ impl VirtualMachine {
         }
     }
 
+    fn is_truthy(&self, object: Object) -> bool {
+        match object {
+            Object::Null => false,
+            Object::Boolean(value) => value,
+            _ => true,
+        }
+    }
+
     fn execute_bang_operator(&mut self) -> Result<()> {
         let operand = self.pop()?;
         match operand {
             TRUE => self.push(FALSE)?,
             FALSE => self.push(TRUE)?,
+            NULL => self.push(TRUE)?,
             _ => self.push(FALSE)?,
         };
         Ok(())
@@ -221,6 +244,30 @@ mod tests {
             ("!!true", Object::Boolean(true)),
             ("!!false", Object::Boolean(false)),
             ("!!5", Object::Boolean(true)),
+        ];
+
+        for (input, expected_stack) in tests {
+            run_vm_tests(input, expected_stack);
+        }
+    }
+
+    #[test]
+    fn test_conditionals() {
+        let tests = vec![
+            ("if (true) { 10 }", Object::Integer(10)),
+            ("if (true) { 10 } else { 20 }", Object::Integer(10)),
+            ("if (false) { 10 } else { 20 }", Object::Integer(20)),
+            ("if (1) { 10 }", Object::Integer(10)),
+            ("if (1 < 2) { 10 }", Object::Integer(10)),
+            ("if (1 < 2) { 10 } else { 20 }", Object::Integer(10)),
+            ("if (1 > 2) { 10 } else { 20 }", Object::Integer(20)),
+            ("if (1 > 2) { 10 }", Object::Null),
+            ("if (false) { 10 }", Object::Null),
+            (
+                "if ((if (false) { 10 })) { 10 } else { 20 }",
+                Object::Integer(20),
+            ),
+            ("!if (false) { 10 }", Object::Boolean(true)),
         ];
 
         for (input, expected_stack) in tests {
