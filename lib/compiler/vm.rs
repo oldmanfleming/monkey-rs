@@ -24,6 +24,10 @@ impl VirtualMachine {
         }
     }
 
+    pub fn last_popped_elem(&self) -> Option<&Object> {
+        self.stack.get(self.stack_pointer)
+    }
+
     pub fn run(&mut self, bytecode: Bytecode) -> Result<Object> {
         let mut instructions = Cursor::new(bytecode.instructions.inner());
 
@@ -53,6 +57,12 @@ impl VirtualMachine {
                 Opcode::False => {
                     self.push(FALSE)?;
                 }
+                Opcode::Minus => {
+                    self.execute_minus_operator()?;
+                }
+                Opcode::Bang => {
+                    self.execute_bang_operator()?;
+                }
             }
         }
 
@@ -60,6 +70,26 @@ impl VirtualMachine {
             .last_popped_elem()
             .ok_or(anyhow!("no stack result"))?
             .clone())
+    }
+
+    fn push(&mut self, object: Object) -> Result<()> {
+        if self.stack_pointer >= STACK_SIZE {
+            bail!("stack overflow");
+        }
+
+        self.stack[self.stack_pointer] = object;
+        self.stack_pointer += 1;
+
+        Ok(())
+    }
+
+    fn pop(&mut self) -> Result<Object> {
+        if self.stack_pointer == 0 {
+            bail!("stack underflow");
+        }
+
+        self.stack_pointer -= 1;
+        Ok(self.stack[self.stack_pointer].clone())
     }
 
     fn execute_binary_operation(&mut self, opcode: Opcode) -> Result<(), anyhow::Error> {
@@ -113,28 +143,24 @@ impl VirtualMachine {
         }
     }
 
-    fn push(&mut self, object: Object) -> Result<()> {
-        if self.stack_pointer >= STACK_SIZE {
-            bail!("stack overflow");
-        }
-
-        self.stack[self.stack_pointer] = object;
-        self.stack_pointer += 1;
-
+    fn execute_bang_operator(&mut self) -> Result<()> {
+        let operand = self.pop()?;
+        match operand {
+            TRUE => self.push(FALSE)?,
+            FALSE => self.push(TRUE)?,
+            _ => self.push(FALSE)?,
+        };
         Ok(())
     }
 
-    fn pop(&mut self) -> Result<Object> {
-        if self.stack_pointer == 0 {
-            bail!("stack underflow");
-        }
-
-        self.stack_pointer -= 1;
-        Ok(self.stack[self.stack_pointer].clone())
-    }
-
-    pub fn last_popped_elem(&self) -> Option<&Object> {
-        self.stack.get(self.stack_pointer)
+    fn execute_minus_operator(&mut self) -> Result<(), anyhow::Error> {
+        let operand = self.pop()?;
+        Ok(match operand {
+            Object::Integer(value) => {
+                self.push(Object::Integer(-value))?;
+            }
+            _ => bail!("unsupported type for negation: {:?}", operand),
+        })
     }
 }
 
@@ -157,7 +183,9 @@ mod tests {
             ("5 * 2 + 10", Object::Integer(20)),
             ("5 + 2 * 10", Object::Integer(25)),
             ("5 * (2 + 10)", Object::Integer(60)),
-            // ("-(5 + 2)", Object::Integer(-7)),
+            ("-(5 + 2)", Object::Integer(-7)),
+            ("-50 + 100 + -50", Object::Integer(0)),
+            ("(5 + 10 * 2 + 15 / 3) * 2 + -10", Object::Integer(50)),
         ];
 
         for (input, expected_stack) in tests {
@@ -187,6 +215,12 @@ mod tests {
             ("(1 < 2) == false", Object::Boolean(false)),
             ("(1 > 2) == true", Object::Boolean(false)),
             ("(1 > 2) == false", Object::Boolean(true)),
+            ("!true", Object::Boolean(false)),
+            ("!false", Object::Boolean(true)),
+            ("!5", Object::Boolean(false)),
+            ("!!true", Object::Boolean(true)),
+            ("!!false", Object::Boolean(false)),
+            ("!!5", Object::Boolean(true)),
         ];
 
         for (input, expected_stack) in tests {

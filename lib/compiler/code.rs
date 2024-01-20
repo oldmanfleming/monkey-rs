@@ -100,6 +100,9 @@ pub enum Opcode {
     Equal,
     NotEqual,
     GreaterThan,
+
+    Minus,
+    Bang,
 }
 
 impl Opcode {
@@ -116,6 +119,8 @@ impl Opcode {
             Opcode::Equal => "Equal",
             Opcode::NotEqual => "NotEqual",
             Opcode::GreaterThan => "GreaterThan",
+            Opcode::Minus => "Minus",
+            Opcode::Bang => "Bang",
         }
     }
 
@@ -138,6 +143,8 @@ impl Opcode {
             Opcode::Equal => vec![],
             Opcode::NotEqual => vec![],
             Opcode::GreaterThan => vec![],
+            Opcode::Minus => vec![],
+            Opcode::Bang => vec![],
         }
     }
 }
@@ -158,6 +165,8 @@ impl TryFrom<u8> for Opcode {
             8 => Opcode::Equal,
             9 => Opcode::NotEqual,
             10 => Opcode::GreaterThan,
+            11 => Opcode::Minus,
+            12 => Opcode::Bang,
             _ => bail!("unknown opcode: {}", value),
         };
         Ok(opcode)
@@ -178,6 +187,8 @@ impl From<Opcode> for u8 {
             Opcode::Equal => 8,
             Opcode::NotEqual => 9,
             Opcode::GreaterThan => 10,
+            Opcode::Minus => 11,
+            Opcode::Bang => 12,
         }
     }
 }

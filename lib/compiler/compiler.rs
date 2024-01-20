@@ -78,6 +78,14 @@ impl Compiler {
                     _ => bail!("unimplemented operator: {:?}", operator),
                 };
             }
+            Expression::Prefix { operator, right } => {
+                self.compile_expression(*right)?;
+                match operator {
+                    Token::Bang => self.emit(Opcode::Bang, vec![])?,
+                    Token::Minus => self.emit(Opcode::Minus, vec![])?,
+                    _ => bail!("unimplemented operator: {:?}", operator),
+                };
+            }
             Expression::IntegerLiteral(value) => {
                 let integer = Object::Integer(value);
                 self.constants.push(integer);
@@ -168,6 +176,15 @@ mod tests {
                     Instructions::make(Opcode::Pop, vec![]).unwrap(),
                 ]),
             ),
+            (
+                "-1",
+                vec![Object::Integer(1)],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Minus, vec![]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                ]),
+            ),
         ];
 
         for (input, expected_constants, expected_instructions) in tests {
@@ -254,15 +271,15 @@ mod tests {
                     Instructions::make(Opcode::Pop, vec![]).unwrap(),
                 ]),
             ),
-            // (
-            //     "!true",
-            //     vec![],
-            //     Instructions::from(vec![
-            //         Instructions::make(Opcode::True, vec![])?,
-            //         Instructions::make(Opcode::Bang, vec![])?,
-            //         Instructions::make(Opcode::Pop, vec![])?,
-            //     ]),
-            // ),
+            (
+                "!true",
+                vec![],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::True, vec![]).unwrap(),
+                    Instructions::make(Opcode::Bang, vec![]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                ]),
+            ),
         ];
 
         for (input, expected_constants, expected_instructions) in tests {
