@@ -35,7 +35,13 @@ impl VirtualMachine {
                     let constant = bytecode.constants[constant_index].clone();
                     self.push(constant)?;
                 }
-                Opcode::Add | Opcode::Sub | Opcode::Mul | Opcode::Div => {
+                Opcode::Add
+                | Opcode::Sub
+                | Opcode::Mul
+                | Opcode::Div
+                | Opcode::Equal
+                | Opcode::NotEqual
+                | Opcode::GreaterThan => {
                     self.execute_binary_operation(opcode)?;
                 }
                 Opcode::Pop => {
@@ -61,20 +67,31 @@ impl VirtualMachine {
         let left = self.pop()?;
         match (left, right) {
             (Object::Integer(left), Object::Integer(right)) => {
-                let int = match opcode {
-                    Opcode::Add => left + right,
-                    Opcode::Sub => left - right,
-                    Opcode::Mul => left * right,
+                let result = match opcode {
+                    Opcode::Add => Object::Integer(left + right),
+                    Opcode::Sub => Object::Integer(left - right),
+                    Opcode::Mul => Object::Integer(left * right),
                     Opcode::Div => {
                         if right == 0 {
                             bail!("division by zero");
                         }
 
-                        left / right
+                        Object::Integer(left / right)
                     }
+                    Opcode::Equal => self.native_boolean_to_boolean_object(left == right),
+                    Opcode::NotEqual => self.native_boolean_to_boolean_object(left != right),
+                    Opcode::GreaterThan => self.native_boolean_to_boolean_object(left > right),
                     _ => bail!("unknown integer operator: {:?}", opcode),
                 };
-                self.push(Object::Integer(int))?
+                self.push(result)?
+            }
+            (Object::Boolean(left), Object::Boolean(right)) => {
+                let result = match opcode {
+                    Opcode::Equal => self.native_boolean_to_boolean_object(left == right),
+                    Opcode::NotEqual => self.native_boolean_to_boolean_object(left != right),
+                    _ => bail!("unknown boolean operator: {:?}", opcode),
+                };
+                self.push(result)?
             }
             (left, right) => {
                 bail!(
@@ -86,6 +103,14 @@ impl VirtualMachine {
             }
         };
         Ok(())
+    }
+
+    fn native_boolean_to_boolean_object(&self, input: bool) -> Object {
+        if input {
+            TRUE
+        } else {
+            FALSE
+        }
     }
 
     fn push(&mut self, object: Object) -> Result<()> {
@@ -145,23 +170,23 @@ mod tests {
         let tests = vec![
             ("true", Object::Boolean(true)),
             ("false", Object::Boolean(false)),
-            // ("1 < 2", Object::Boolean(true)),
-            // ("1 > 2", Object::Boolean(false)),
-            // ("1 < 1", Object::Boolean(false)),
-            // ("1 > 1", Object::Boolean(false)),
-            // ("1 == 1", Object::Boolean(true)),
-            // ("1 != 1", Object::Boolean(false)),
-            // ("1 == 2", Object::Boolean(false)),
-            // ("1 != 2", Object::Boolean(true)),
-            // ("true == true", Object::Boolean(true)),
-            // ("false == false", Object::Boolean(true)),
-            // ("true == false", Object::Boolean(false)),
-            // ("true != false", Object::Boolean(true)),
-            // ("false != true", Object::Boolean(true)),
-            // ("(1 < 2) == true", Object::Boolean(true)),
-            // ("(1 < 2) == false", Object::Boolean(false)),
-            // ("(1 > 2) == true", Object::Boolean(false)),
-            // ("(1 > 2) == false", Object::Boolean(true)),
+            ("1 < 2", Object::Boolean(true)),
+            ("1 > 2", Object::Boolean(false)),
+            ("1 < 1", Object::Boolean(false)),
+            ("1 > 1", Object::Boolean(false)),
+            ("1 == 1", Object::Boolean(true)),
+            ("1 != 1", Object::Boolean(false)),
+            ("1 == 2", Object::Boolean(false)),
+            ("1 != 2", Object::Boolean(true)),
+            ("true == true", Object::Boolean(true)),
+            ("false == false", Object::Boolean(true)),
+            ("true == false", Object::Boolean(false)),
+            ("true != false", Object::Boolean(true)),
+            ("false != true", Object::Boolean(true)),
+            ("(1 < 2) == true", Object::Boolean(true)),
+            ("(1 < 2) == false", Object::Boolean(false)),
+            ("(1 > 2) == true", Object::Boolean(false)),
+            ("(1 > 2) == false", Object::Boolean(true)),
         ];
 
         for (input, expected_stack) in tests {

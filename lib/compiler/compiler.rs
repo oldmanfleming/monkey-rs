@@ -55,14 +55,26 @@ impl Compiler {
                 operator,
                 right,
             } => {
+                // The order of the operands is important for the VM.
+                // We re-order the operands for Lt to create an Gt (compiler fun).
+                // E.g 1 < 2 => 2 > 1
+                if operator == Token::Lt {
+                    self.compile_expression(*right)?;
+                    self.compile_expression(*left)?;
+                    self.emit(Opcode::GreaterThan, vec![])?;
+                    return Ok(());
+                }
+
                 self.compile_expression(*left)?;
                 self.compile_expression(*right)?;
-
                 match operator {
                     Token::Plus => self.emit(Opcode::Add, vec![])?,
                     Token::Minus => self.emit(Opcode::Sub, vec![])?,
                     Token::Asterisk => self.emit(Opcode::Mul, vec![])?,
                     Token::Slash => self.emit(Opcode::Div, vec![])?,
+                    Token::Eq => self.emit(Opcode::Equal, vec![])?,
+                    Token::NotEq => self.emit(Opcode::NotEqual, vec![])?,
+                    Token::Gt => self.emit(Opcode::GreaterThan, vec![])?,
                     _ => bail!("unimplemented operator: {:?}", operator),
                 };
             }
@@ -182,66 +194,66 @@ mod tests {
                     Instructions::make(Opcode::Pop, vec![]).unwrap(),
                 ]),
             ),
-            // (
-            //     "1 > 2",
-            //     vec![Object::Integer(1), Object::Integer(2)],
-            //     Instructions::from(vec![
-            //         Instructions::make(Opcode::Constant, vec![0])?,
-            //         Instructions::make(Opcode::Constant, vec![1])?,
-            //         Instructions::make(Opcode::GreaterThan, vec![])?,
-            //         Instructions::make(Opcode::Pop, vec![])?,
-            //     ]),
-            // ),
-            // (
-            //     "1 < 2",
-            //     vec![Object::Integer(2), Object::Integer(1)],
-            //     Instructions::from(vec![
-            //         Instructions::make(Opcode::Constant, vec![0])?,
-            //         Instructions::make(Opcode::Constant, vec![1])?,
-            //         Instructions::make(Opcode::GreaterThan, vec![])?,
-            //         Instructions::make(Opcode::Pop, vec![])?,
-            //     ]),
-            // ),
-            // (
-            //     "1 == 2",
-            //     vec![Object::Integer(1), Object::Integer(2)],
-            //     Instructions::from(vec![
-            //         Instructions::make(Opcode::Constant, vec![0])?,
-            //         Instructions::make(Opcode::Constant, vec![1])?,
-            //         Instructions::make(Opcode::Equal, vec![])?,
-            //         Instructions::make(Opcode::Pop, vec![])?,
-            //     ]),
-            // ),
-            // (
-            //     "1 != 2",
-            //     vec![Object::Integer(1), Object::Integer(2)],
-            //     Instructions::from(vec![
-            //         Instructions::make(Opcode::Constant, vec![0])?,
-            //         Instructions::make(Opcode::Constant, vec![1])?,
-            //         Instructions::make(Opcode::NotEqual, vec![])?,
-            //         Instructions::make(Opcode::Pop, vec![])?,
-            //     ]),
-            // ),
-            // (
-            //     "true == false",
-            //     vec![],
-            //     Instructions::from(vec![
-            //         Instructions::make(Opcode::True, vec![])?,
-            //         Instructions::make(Opcode::False, vec![])?,
-            //         Instructions::make(Opcode::Equal, vec![])?,
-            //         Instructions::make(Opcode::Pop, vec![])?,
-            //     ]),
-            // ),
-            // (
-            //     "true != false",
-            //     vec![],
-            //     Instructions::from(vec![
-            //         Instructions::make(Opcode::True, vec![])?,
-            //         Instructions::make(Opcode::False, vec![])?,
-            //         Instructions::make(Opcode::NotEqual, vec![])?,
-            //         Instructions::make(Opcode::Pop, vec![])?,
-            //     ]),
-            // ),
+            (
+                "1 > 2",
+                vec![Object::Integer(1), Object::Integer(2)],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![1]).unwrap(),
+                    Instructions::make(Opcode::GreaterThan, vec![]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                ]),
+            ),
+            (
+                "1 < 2",
+                vec![Object::Integer(2), Object::Integer(1)],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![1]).unwrap(),
+                    Instructions::make(Opcode::GreaterThan, vec![]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                ]),
+            ),
+            (
+                "1 == 2",
+                vec![Object::Integer(1), Object::Integer(2)],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![1]).unwrap(),
+                    Instructions::make(Opcode::Equal, vec![]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                ]),
+            ),
+            (
+                "1 != 2",
+                vec![Object::Integer(1), Object::Integer(2)],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![1]).unwrap(),
+                    Instructions::make(Opcode::NotEqual, vec![]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                ]),
+            ),
+            (
+                "true == false",
+                vec![],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::True, vec![]).unwrap(),
+                    Instructions::make(Opcode::False, vec![]).unwrap(),
+                    Instructions::make(Opcode::Equal, vec![]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                ]),
+            ),
+            (
+                "true != false",
+                vec![],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::True, vec![]).unwrap(),
+                    Instructions::make(Opcode::False, vec![]).unwrap(),
+                    Instructions::make(Opcode::NotEqual, vec![]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                ]),
+            ),
             // (
             //     "!true",
             //     vec![],

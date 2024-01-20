@@ -96,6 +96,10 @@ pub enum Opcode {
 
     True,
     False,
+
+    Equal,
+    NotEqual,
+    GreaterThan,
 }
 
 impl Opcode {
@@ -109,6 +113,9 @@ impl Opcode {
             Opcode::Div => "Div",
             Opcode::True => "True",
             Opcode::False => "False",
+            Opcode::Equal => "Equal",
+            Opcode::NotEqual => "NotEqual",
+            Opcode::GreaterThan => "GreaterThan",
         }
     }
 
@@ -128,6 +135,9 @@ impl Opcode {
             Opcode::Div => vec![],
             Opcode::True => vec![],
             Opcode::False => vec![],
+            Opcode::Equal => vec![],
+            Opcode::NotEqual => vec![],
+            Opcode::GreaterThan => vec![],
         }
     }
 }
@@ -145,6 +155,9 @@ impl TryFrom<u8> for Opcode {
             5 => Opcode::Div,
             6 => Opcode::True,
             7 => Opcode::False,
+            8 => Opcode::Equal,
+            9 => Opcode::NotEqual,
+            10 => Opcode::GreaterThan,
             _ => bail!("unknown opcode: {}", value),
         };
         Ok(opcode)
@@ -162,6 +175,9 @@ impl From<Opcode> for u8 {
             Opcode::Div => 5,
             Opcode::True => 6,
             Opcode::False => 7,
+            Opcode::Equal => 8,
+            Opcode::NotEqual => 9,
+            Opcode::GreaterThan => 10,
         }
     }
 }
@@ -194,6 +210,9 @@ mod tests {
             Instructions::make(Opcode::Div, vec![]).unwrap(),
             Instructions::make(Opcode::False, vec![]).unwrap(),
             Instructions::make(Opcode::True, vec![]).unwrap(),
+            Instructions::make(Opcode::Equal, vec![]).unwrap(),
+            Instructions::make(Opcode::NotEqual, vec![]).unwrap(),
+            Instructions::make(Opcode::GreaterThan, vec![]).unwrap(),
         ]);
 
         let expected = r#"0000 Add
@@ -204,6 +223,9 @@ mod tests {
 0009 Div
 0010 False
 0011 True
+0012 Equal
+0013 NotEqual
+0014 GreaterThan
 "#;
 
         assert_eq!(instructions.to_string(), expected);
