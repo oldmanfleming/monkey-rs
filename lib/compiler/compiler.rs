@@ -60,6 +60,9 @@ impl Compiler {
 
                 match operator {
                     Token::Plus => self.emit(Opcode::Add, vec![])?,
+                    Token::Minus => self.emit(Opcode::Sub, vec![])?,
+                    Token::Asterisk => self.emit(Opcode::Mul, vec![])?,
+                    Token::Slash => self.emit(Opcode::Div, vec![])?,
                     _ => bail!("unimplemented operator: {:?}", operator),
                 };
             }
@@ -103,6 +106,36 @@ mod tests {
                     Instructions::make(Opcode::Constant, vec![0])?,
                     Instructions::make(Opcode::Constant, vec![1])?,
                     Instructions::make(Opcode::Add, vec![])?,
+                    Instructions::make(Opcode::Pop, vec![])?,
+                ]),
+            ),
+            (
+                "1 - 2",
+                vec![Object::Integer(1), Object::Integer(2)],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::Constant, vec![0])?,
+                    Instructions::make(Opcode::Constant, vec![1])?,
+                    Instructions::make(Opcode::Sub, vec![])?,
+                    Instructions::make(Opcode::Pop, vec![])?,
+                ]),
+            ),
+            (
+                "1 * 2",
+                vec![Object::Integer(1), Object::Integer(2)],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::Constant, vec![0])?,
+                    Instructions::make(Opcode::Constant, vec![1])?,
+                    Instructions::make(Opcode::Mul, vec![])?,
+                    Instructions::make(Opcode::Pop, vec![])?,
+                ]),
+            ),
+            (
+                "2 / 1",
+                vec![Object::Integer(2), Object::Integer(1)],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::Constant, vec![0])?,
+                    Instructions::make(Opcode::Constant, vec![1])?,
+                    Instructions::make(Opcode::Div, vec![])?,
                     Instructions::make(Opcode::Pop, vec![])?,
                 ]),
             ),

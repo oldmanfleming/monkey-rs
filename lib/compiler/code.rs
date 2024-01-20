@@ -87,8 +87,12 @@ impl fmt::Display for Instructions {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Opcode {
     Constant,
-    Add,
     Pop,
+
+    Add,
+    Sub,
+    Mul,
+    Div,
 }
 
 impl Opcode {
@@ -97,6 +101,9 @@ impl Opcode {
             Opcode::Constant => "Constant",
             Opcode::Add => "Add",
             Opcode::Pop => "Pop",
+            Opcode::Sub => "Sub",
+            Opcode::Mul => "Mul",
+            Opcode::Div => "Div",
         }
     }
 
@@ -111,6 +118,9 @@ impl Opcode {
             Opcode::Constant => vec![2],
             Opcode::Add => vec![],
             Opcode::Pop => vec![],
+            Opcode::Sub => vec![],
+            Opcode::Mul => vec![],
+            Opcode::Div => vec![],
         }
     }
 }
@@ -123,6 +133,9 @@ impl TryFrom<u8> for Opcode {
             0 => Opcode::Constant,
             1 => Opcode::Add,
             2 => Opcode::Pop,
+            3 => Opcode::Sub,
+            4 => Opcode::Mul,
+            5 => Opcode::Div,
             _ => bail!("unknown opcode: {}", value),
         };
         Ok(opcode)
@@ -135,6 +148,9 @@ impl From<Opcode> for u8 {
             Opcode::Constant => 0,
             Opcode::Add => 1,
             Opcode::Pop => 2,
+            Opcode::Sub => 3,
+            Opcode::Mul => 4,
+            Opcode::Div => 5,
         }
     }
 }
@@ -162,11 +178,17 @@ mod tests {
             Instructions::make(Opcode::Add, vec![]).unwrap(),
             Instructions::make(Opcode::Constant, vec![2]).unwrap(),
             Instructions::make(Opcode::Constant, vec![65535]).unwrap(),
+            Instructions::make(Opcode::Sub, vec![]).unwrap(),
+            Instructions::make(Opcode::Mul, vec![]).unwrap(),
+            Instructions::make(Opcode::Div, vec![]).unwrap(),
         ]);
 
         let expected = r#"0000 Add
 0001 Constant 2
 0004 Constant 65535
+0007 Sub
+0008 Mul
+0009 Div
 "#;
 
         assert_eq!(instructions.to_string(), expected);

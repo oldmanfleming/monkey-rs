@@ -32,17 +32,8 @@ impl VirtualMachine {
                     let constant = bytecode.constants[constant_index].clone();
                     self.push(constant)?;
                 }
-                Opcode::Add => {
-                    let right = self.pop()?;
-                    let left = self.pop()?;
-                    match (left, right) {
-                        (Object::Integer(left), Object::Integer(right)) => {
-                            self.push(Object::Integer(left + right))?
-                        }
-                        (left, right) => {
-                            bail!("unsupported types for add: {:?} + {:?}", left, right)
-                        }
-                    }
+                Opcode::Add | Opcode::Sub | Opcode::Mul | Opcode::Div => {
+                    self.execute_binary_operation(opcode)?;
                 }
                 Opcode::Pop => {
                     self.pop()?;
@@ -54,6 +45,32 @@ impl VirtualMachine {
             .last_popped_elem()
             .ok_or(anyhow!("no stack result"))?
             .clone())
+    }
+
+    fn execute_binary_operation(&mut self, opcode: Opcode) -> Result<(), anyhow::Error> {
+        let right = self.pop()?;
+        let left = self.pop()?;
+        match (left, right) {
+            (Object::Integer(left), Object::Integer(right)) => {
+                let int = match opcode {
+                    Opcode::Add => left + right,
+                    Opcode::Sub => left - right,
+                    Opcode::Mul => left * right,
+                    Opcode::Div => left / right,
+                    _ => bail!("unknown integer operator: {:?}", opcode),
+                };
+                self.push(Object::Integer(int))?
+            }
+            (left, right) => {
+                bail!(
+                    "unsupported types for {:?}: {:?} + {:?}",
+                    opcode,
+                    left,
+                    right
+                )
+            }
+        };
+        Ok(())
     }
 
     fn push(&mut self, object: Object) -> Result<()> {
@@ -88,11 +105,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test() {
+    fn test_integer_arithmetic() {
         let tests = vec![
-            ("1", Object::Integer(1)),
-            ("2", Object::Integer(2)),
             ("1 + 2", Object::Integer(3)),
+            ("1 - 2", Object::Integer(-1)),
+            ("1 * 2", Object::Integer(2)),
+            ("4 / 2", Object::Integer(2)),
+            ("50 / 2 * 2 + 10 - 5", Object::Integer(55)),
+            ("5 + 5 + 5 + 5 - 10", Object::Integer(10)),
+            ("2 * 2 * 2 * 2 * 2", Object::Integer(32)),
+            ("5 * 2 + 10", Object::Integer(20)),
+            ("5 + 2 * 10", Object::Integer(25)),
+            ("5 * (2 + 10)", Object::Integer(60)),
+            // ("-(5 + 2)", Object::Integer(-7)),
+            // ("!(true == true)", Object::Boolean(false)),
+            // ("1 < 2", Object::Boolean(true)),
+            // ("1 > 2", Object::Boolean(false)),
+            // ("1 < 1", Object::Boolean(false)),
+            // ("1 > 1", Object::Boolean(false)),
+            // ("1 == 1", Object::Boolean(true)),
+            // ("1 != 1", Object::Boolean(false)),
+            // ("1 == 2", Object::Boolean(false)),
+            // ("1 != 2", Object::Boolean(true)),
+            // ("true == true", Object::Boolean(true)),
+            // ("false == false", Object::Boolean(true)),
+            // ("true == false", Object::Boolean(false)),
+            // ("true != false", Object::Boolean(true)),
+            // ("false != true", Object::Boolean(true)),
+            // ("(1 < 2) == true", Object::Boolean(true)),
+            // ("(1 < 2) == false", Object::Boolean(false)),
+            // ("(1 > 2) == true", Object::Boolean(false)),
+            // ("(1 > 2) == false", Object::Boolean(true)),
         ];
 
         for (input, expected_stack) in tests {
