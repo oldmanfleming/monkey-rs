@@ -11,7 +11,7 @@ impl Instructions {
         Self(vec![])
     }
 
-    /// Mostly useful for testing when specifying the instructions individually
+    #[cfg(test)]
     pub fn from(instructions: Vec<Vec<u8>>) -> Self {
         Self(instructions.into_iter().flatten().collect::<Vec<u8>>())
     }
