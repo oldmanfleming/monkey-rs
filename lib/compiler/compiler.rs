@@ -71,6 +71,13 @@ impl Compiler {
                 self.constants.push(integer);
                 self.emit(Opcode::Constant, vec![self.constants.len() - 1])?;
             }
+            Expression::BooleanLiteral(value) => {
+                if value {
+                    self.emit(Opcode::True, vec![])?;
+                } else {
+                    self.emit(Opcode::False, vec![])?;
+                }
+            }
             _ => bail!("unimplemented expression: {:?}", expression),
         }
 
@@ -97,56 +104,56 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_compile_integer_arithmetic() -> Result<()> {
+    fn test_compile_integer_arithmetic() {
         let tests = vec![
             (
                 "1 + 2",
                 vec![Object::Integer(1), Object::Integer(2)],
                 Instructions::from(vec![
-                    Instructions::make(Opcode::Constant, vec![0])?,
-                    Instructions::make(Opcode::Constant, vec![1])?,
-                    Instructions::make(Opcode::Add, vec![])?,
-                    Instructions::make(Opcode::Pop, vec![])?,
+                    Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![1]).unwrap(),
+                    Instructions::make(Opcode::Add, vec![]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
                 ]),
             ),
             (
                 "1 - 2",
                 vec![Object::Integer(1), Object::Integer(2)],
                 Instructions::from(vec![
-                    Instructions::make(Opcode::Constant, vec![0])?,
-                    Instructions::make(Opcode::Constant, vec![1])?,
-                    Instructions::make(Opcode::Sub, vec![])?,
-                    Instructions::make(Opcode::Pop, vec![])?,
+                    Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![1]).unwrap(),
+                    Instructions::make(Opcode::Sub, vec![]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
                 ]),
             ),
             (
                 "1 * 2",
                 vec![Object::Integer(1), Object::Integer(2)],
                 Instructions::from(vec![
-                    Instructions::make(Opcode::Constant, vec![0])?,
-                    Instructions::make(Opcode::Constant, vec![1])?,
-                    Instructions::make(Opcode::Mul, vec![])?,
-                    Instructions::make(Opcode::Pop, vec![])?,
+                    Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![1]).unwrap(),
+                    Instructions::make(Opcode::Mul, vec![]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
                 ]),
             ),
             (
                 "2 / 1",
                 vec![Object::Integer(2), Object::Integer(1)],
                 Instructions::from(vec![
-                    Instructions::make(Opcode::Constant, vec![0])?,
-                    Instructions::make(Opcode::Constant, vec![1])?,
-                    Instructions::make(Opcode::Div, vec![])?,
-                    Instructions::make(Opcode::Pop, vec![])?,
+                    Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![1]).unwrap(),
+                    Instructions::make(Opcode::Div, vec![]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
                 ]),
             ),
             (
                 "1; 2",
                 vec![Object::Integer(1), Object::Integer(2)],
                 Instructions::from(vec![
-                    Instructions::make(Opcode::Constant, vec![0])?,
-                    Instructions::make(Opcode::Pop, vec![])?,
-                    Instructions::make(Opcode::Constant, vec![1])?,
-                    Instructions::make(Opcode::Pop, vec![])?,
+                    Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![1]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
                 ]),
             ),
         ];
@@ -154,8 +161,101 @@ mod tests {
         for (input, expected_constants, expected_instructions) in tests {
             run_compiler_tests(input, expected_constants, expected_instructions);
         }
+    }
 
-        Ok(())
+    #[test]
+    fn test_boolean_expressions() {
+        let tests = vec![
+            (
+                "true",
+                vec![],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::True, vec![]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                ]),
+            ),
+            (
+                "false",
+                vec![],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::False, vec![]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                ]),
+            ),
+            // (
+            //     "1 > 2",
+            //     vec![Object::Integer(1), Object::Integer(2)],
+            //     Instructions::from(vec![
+            //         Instructions::make(Opcode::Constant, vec![0])?,
+            //         Instructions::make(Opcode::Constant, vec![1])?,
+            //         Instructions::make(Opcode::GreaterThan, vec![])?,
+            //         Instructions::make(Opcode::Pop, vec![])?,
+            //     ]),
+            // ),
+            // (
+            //     "1 < 2",
+            //     vec![Object::Integer(2), Object::Integer(1)],
+            //     Instructions::from(vec![
+            //         Instructions::make(Opcode::Constant, vec![0])?,
+            //         Instructions::make(Opcode::Constant, vec![1])?,
+            //         Instructions::make(Opcode::GreaterThan, vec![])?,
+            //         Instructions::make(Opcode::Pop, vec![])?,
+            //     ]),
+            // ),
+            // (
+            //     "1 == 2",
+            //     vec![Object::Integer(1), Object::Integer(2)],
+            //     Instructions::from(vec![
+            //         Instructions::make(Opcode::Constant, vec![0])?,
+            //         Instructions::make(Opcode::Constant, vec![1])?,
+            //         Instructions::make(Opcode::Equal, vec![])?,
+            //         Instructions::make(Opcode::Pop, vec![])?,
+            //     ]),
+            // ),
+            // (
+            //     "1 != 2",
+            //     vec![Object::Integer(1), Object::Integer(2)],
+            //     Instructions::from(vec![
+            //         Instructions::make(Opcode::Constant, vec![0])?,
+            //         Instructions::make(Opcode::Constant, vec![1])?,
+            //         Instructions::make(Opcode::NotEqual, vec![])?,
+            //         Instructions::make(Opcode::Pop, vec![])?,
+            //     ]),
+            // ),
+            // (
+            //     "true == false",
+            //     vec![],
+            //     Instructions::from(vec![
+            //         Instructions::make(Opcode::True, vec![])?,
+            //         Instructions::make(Opcode::False, vec![])?,
+            //         Instructions::make(Opcode::Equal, vec![])?,
+            //         Instructions::make(Opcode::Pop, vec![])?,
+            //     ]),
+            // ),
+            // (
+            //     "true != false",
+            //     vec![],
+            //     Instructions::from(vec![
+            //         Instructions::make(Opcode::True, vec![])?,
+            //         Instructions::make(Opcode::False, vec![])?,
+            //         Instructions::make(Opcode::NotEqual, vec![])?,
+            //         Instructions::make(Opcode::Pop, vec![])?,
+            //     ]),
+            // ),
+            // (
+            //     "!true",
+            //     vec![],
+            //     Instructions::from(vec![
+            //         Instructions::make(Opcode::True, vec![])?,
+            //         Instructions::make(Opcode::Bang, vec![])?,
+            //         Instructions::make(Opcode::Pop, vec![])?,
+            //     ]),
+            // ),
+        ];
+
+        for (input, expected_constants, expected_instructions) in tests {
+            run_compiler_tests(input, expected_constants, expected_instructions);
+        }
     }
 
     fn run_compiler_tests(

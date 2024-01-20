@@ -8,6 +8,9 @@ use super::{code::Opcode, compiler::Bytecode, object::Object};
 const STACK_SIZE: usize = 2048;
 const NULL: Object = Object::Null;
 
+const TRUE: Object = Object::Boolean(true);
+const FALSE: Object = Object::Boolean(false);
+
 pub struct VirtualMachine {
     stack: [Object; STACK_SIZE],
     stack_pointer: usize,
@@ -37,6 +40,12 @@ impl VirtualMachine {
                 }
                 Opcode::Pop => {
                     self.pop()?;
+                }
+                Opcode::True => {
+                    self.push(TRUE)?;
+                }
+                Opcode::False => {
+                    self.push(FALSE)?;
                 }
             }
         }
@@ -124,7 +133,18 @@ mod tests {
             ("5 + 2 * 10", Object::Integer(25)),
             ("5 * (2 + 10)", Object::Integer(60)),
             // ("-(5 + 2)", Object::Integer(-7)),
-            // ("!(true == true)", Object::Boolean(false)),
+        ];
+
+        for (input, expected_stack) in tests {
+            run_vm_tests(input, expected_stack);
+        }
+    }
+
+    #[test]
+    fn test_boolean_expressions() {
+        let tests = vec![
+            ("true", Object::Boolean(true)),
+            ("false", Object::Boolean(false)),
             // ("1 < 2", Object::Boolean(true)),
             // ("1 > 2", Object::Boolean(false)),
             // ("1 < 1", Object::Boolean(false)),

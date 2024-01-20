@@ -93,6 +93,9 @@ pub enum Opcode {
     Sub,
     Mul,
     Div,
+
+    True,
+    False,
 }
 
 impl Opcode {
@@ -104,6 +107,8 @@ impl Opcode {
             Opcode::Sub => "Sub",
             Opcode::Mul => "Mul",
             Opcode::Div => "Div",
+            Opcode::True => "True",
+            Opcode::False => "False",
         }
     }
 
@@ -121,6 +126,8 @@ impl Opcode {
             Opcode::Sub => vec![],
             Opcode::Mul => vec![],
             Opcode::Div => vec![],
+            Opcode::True => vec![],
+            Opcode::False => vec![],
         }
     }
 }
@@ -136,6 +143,8 @@ impl TryFrom<u8> for Opcode {
             3 => Opcode::Sub,
             4 => Opcode::Mul,
             5 => Opcode::Div,
+            6 => Opcode::True,
+            7 => Opcode::False,
             _ => bail!("unknown opcode: {}", value),
         };
         Ok(opcode)
@@ -151,6 +160,8 @@ impl From<Opcode> for u8 {
             Opcode::Sub => 3,
             Opcode::Mul => 4,
             Opcode::Div => 5,
+            Opcode::True => 6,
+            Opcode::False => 7,
         }
     }
 }
@@ -181,6 +192,8 @@ mod tests {
             Instructions::make(Opcode::Sub, vec![]).unwrap(),
             Instructions::make(Opcode::Mul, vec![]).unwrap(),
             Instructions::make(Opcode::Div, vec![]).unwrap(),
+            Instructions::make(Opcode::False, vec![]).unwrap(),
+            Instructions::make(Opcode::True, vec![]).unwrap(),
         ]);
 
         let expected = r#"0000 Add
@@ -189,6 +202,8 @@ mod tests {
 0007 Sub
 0008 Mul
 0009 Div
+0010 False
+0011 True
 "#;
 
         assert_eq!(instructions.to_string(), expected);

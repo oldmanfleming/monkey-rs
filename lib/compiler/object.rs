@@ -4,6 +4,7 @@ use core::fmt;
 pub enum Object {
     Integer(i64),
     String(String),
+    Boolean(bool),
     Null,
 }
 
@@ -12,6 +13,7 @@ impl fmt::Display for Object {
         match self {
             Object::Integer(value) => write!(f, "{}", value),
             Object::String(value) => write!(f, "{}", value),
+            Object::Boolean(value) => write!(f, "{}", value),
             Object::Null => write!(f, "null"),
         }
     }
