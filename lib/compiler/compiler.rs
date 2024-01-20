@@ -81,97 +81,136 @@ impl Compiler {
                 consequence,
                 alternative,
             } => {
-                self.compile_expression(*condition)?;
-
-                // We add the jump instruction with a dummy value because we don't know how far we
-                // have to jump until we evaluate the number of instructions in the consequence block
-                let jump_pos = self.emit(Opcode::JumpNotTruthy, vec![9999])?;
-
-                self.compile_statement(*consequence)?;
-
-                // remove the last instruction from the consequence block if it's a pop
-                // because we do want to keep the last value on the stack after evaluating the consequence
-                if let Some((Opcode::Pop, pos)) = self.last_instruction.clone() {
-                    self.instructions.drain_at(pos);
-                    self.last_instruction = self.prev_instruction.clone();
-                }
-
-                // This is the jump over the else block that the if block will take
-                let alternative_jump_pos = self.emit(Opcode::Jump, vec![9999])?;
-
-                // update the jump position of the falsey jump to point to the start of the alternative block
-                self.instructions
-                    .change_u16_operand(jump_pos, self.instructions.inner().len())?;
-
-                match alternative {
-                    Some(alternative) => {
-                        self.compile_statement(*alternative)?;
-
-                        if let Some((Opcode::Pop, pos)) = self.last_instruction.clone() {
-                            self.instructions.drain_at(pos);
-                            self.last_instruction = self.prev_instruction.clone();
-                        }
-                    }
-                    None => {
-                        // if there is no alternative block, and the if block is not evaluated, we push a null value onto the stack
-                        self.emit(Opcode::Null, vec![])?;
-                    }
-                }
-
-                // update the jump position of the alternative jump to point to the end of the alternative block
-                self.instructions
-                    .change_u16_operand(alternative_jump_pos, self.instructions.inner().len())?;
+                self.compile_conditional_expression(condition, consequence, alternative)?;
             }
             Expression::Infix {
                 left,
                 operator,
                 right,
             } => {
-                // The order of the operands is important for the VM.
-                // We re-order the operands for Lt to create a Gt (compiler fun).
-                // E.g 1 < 2 => 2 > 1
-                if operator == Token::Lt {
-                    self.compile_expression(*right)?;
-                    self.compile_expression(*left)?;
-                    self.emit(Opcode::GreaterThan, vec![])?;
-                    return Ok(());
-                }
-
-                self.compile_expression(*left)?;
-                self.compile_expression(*right)?;
-                match operator {
-                    Token::Plus => self.emit(Opcode::Add, vec![])?,
-                    Token::Minus => self.emit(Opcode::Sub, vec![])?,
-                    Token::Asterisk => self.emit(Opcode::Mul, vec![])?,
-                    Token::Slash => self.emit(Opcode::Div, vec![])?,
-                    Token::Eq => self.emit(Opcode::Equal, vec![])?,
-                    Token::NotEq => self.emit(Opcode::NotEqual, vec![])?,
-                    Token::Gt => self.emit(Opcode::GreaterThan, vec![])?,
-                    _ => bail!("unimplemented operator: {:?}", operator),
-                };
+                self.compile_infix_expression(operator, right, left)?;
             }
             Expression::Prefix { operator, right } => {
-                self.compile_expression(*right)?;
-                match operator {
-                    Token::Bang => self.emit(Opcode::Bang, vec![])?,
-                    Token::Minus => self.emit(Opcode::Minus, vec![])?,
-                    _ => bail!("unimplemented operator: {:?}", operator),
-                };
+                self.compile_prefix_expression(right, operator)?;
             }
             Expression::IntegerLiteral(value) => {
-                let integer = Object::Integer(value);
-                self.constants.push(integer);
-                self.emit(Opcode::Constant, vec![self.constants.len() - 1])?;
+                self.compile_integer_literal(value)?;
             }
             Expression::BooleanLiteral(value) => {
-                if value {
-                    self.emit(Opcode::True, vec![])?;
-                } else {
-                    self.emit(Opcode::False, vec![])?;
-                }
+                self.compile_boolean_literal(value)?;
             }
             _ => bail!("unimplemented expression: {:?}", expression),
         }
+
+        Ok(())
+    }
+
+    fn compile_boolean_literal(&mut self, value: bool) -> Result<(), anyhow::Error> {
+        Ok(if value {
+            self.emit(Opcode::True, vec![])?;
+        } else {
+            self.emit(Opcode::False, vec![])?;
+        })
+    }
+
+    fn compile_integer_literal(&mut self, value: i64) -> Result<(), anyhow::Error> {
+        let integer = Object::Integer(value);
+        self.constants.push(integer);
+        self.emit(Opcode::Constant, vec![self.constants.len() - 1])?;
+        Ok(())
+    }
+
+    fn compile_prefix_expression(
+        &mut self,
+        right: Box<Expression>,
+        operator: Token,
+    ) -> Result<(), anyhow::Error> {
+        self.compile_expression(*right)?;
+        match operator {
+            Token::Bang => self.emit(Opcode::Bang, vec![])?,
+            Token::Minus => self.emit(Opcode::Minus, vec![])?,
+            _ => bail!("unimplemented operator: {:?}", operator),
+        };
+        Ok(())
+    }
+
+    fn compile_infix_expression(
+        &mut self,
+        operator: Token,
+        right: Box<Expression>,
+        left: Box<Expression>,
+    ) -> Result<(), anyhow::Error> {
+        // The order of the operands is important for the VM.
+        // We re-order the operands for Lt to create a Gt (compiler fun).
+        // E.g 1 < 2 => 2 > 1
+        if operator == Token::Lt {
+            self.compile_expression(*right)?;
+            self.compile_expression(*left)?;
+            self.emit(Opcode::GreaterThan, vec![])?;
+            return Ok(());
+        }
+
+        self.compile_expression(*left)?;
+        self.compile_expression(*right)?;
+        match operator {
+            Token::Plus => self.emit(Opcode::Add, vec![])?,
+            Token::Minus => self.emit(Opcode::Sub, vec![])?,
+            Token::Asterisk => self.emit(Opcode::Mul, vec![])?,
+            Token::Slash => self.emit(Opcode::Div, vec![])?,
+            Token::Eq => self.emit(Opcode::Equal, vec![])?,
+            Token::NotEq => self.emit(Opcode::NotEqual, vec![])?,
+            Token::Gt => self.emit(Opcode::GreaterThan, vec![])?,
+            _ => bail!("unimplemented operator: {:?}", operator),
+        };
+        Ok(())
+    }
+
+    fn compile_conditional_expression(
+        &mut self,
+        condition: Box<Expression>,
+        consequence: Box<Statement>,
+        alternative: Option<Box<Statement>>,
+    ) -> Result<(), anyhow::Error> {
+        self.compile_expression(*condition)?;
+
+        // We add the jump instruction with a dummy value because we don't know how far we
+        // have to jump until we evaluate the number of instructions in the consequence block
+        let jump_pos = self.emit(Opcode::JumpNotTruthy, vec![9999])?;
+
+        self.compile_statement(*consequence)?;
+
+        // remove the last instruction from the consequence block if it's a pop
+        // because we do want to keep the last value on the stack after evaluating the consequence
+        if let Some((Opcode::Pop, pos)) = self.last_instruction.clone() {
+            self.instructions.drain_at(pos);
+            self.last_instruction = self.prev_instruction.clone();
+        }
+
+        // This is the jump over the else block that the if block will take
+        let alternative_jump_pos = self.emit(Opcode::Jump, vec![9999])?;
+
+        // update the jump position of the falsey jump to point to the start of the alternative block
+        self.instructions
+            .change_u16_operand(jump_pos, self.instructions.inner().len())?;
+
+        match alternative {
+            Some(alternative) => {
+                self.compile_statement(*alternative)?;
+
+                if let Some((Opcode::Pop, pos)) = self.last_instruction.clone() {
+                    self.instructions.drain_at(pos);
+                    self.last_instruction = self.prev_instruction.clone();
+                }
+            }
+            None => {
+                // if there is no alternative block, and the if block is not evaluated, we push a null value onto the stack
+                self.emit(Opcode::Null, vec![])?;
+            }
+        }
+
+        // update the jump position of the if block jump to point to the end of the alternative block
+        self.instructions
+            .change_u16_operand(alternative_jump_pos, self.instructions.inner().len())?;
 
         Ok(())
     }
