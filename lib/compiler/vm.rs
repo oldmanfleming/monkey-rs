@@ -6,21 +6,26 @@ use byteorder::ReadBytesExt;
 use super::{code::Opcode, compiler::Bytecode, object::Object};
 
 const STACK_SIZE: usize = 2048;
-const NULL: Object = Object::Null;
+const GLOBALS_SIZE: usize = 65536;
 
+const NULL: Object = Object::Null;
 const TRUE: Object = Object::Boolean(true);
 const FALSE: Object = Object::Boolean(false);
 
 pub struct VirtualMachine {
-    stack: [Object; STACK_SIZE],
+    stack: Vec<Object>,
     stack_pointer: usize,
+
+    globals: Vec<Object>,
 }
 
 impl VirtualMachine {
     pub fn new() -> Self {
         Self {
-            stack: [NULL; STACK_SIZE],
+            stack: vec![NULL; STACK_SIZE],
             stack_pointer: 0,
+
+            globals: vec![NULL; GLOBALS_SIZE],
         }
     }
 
@@ -76,6 +81,15 @@ impl VirtualMachine {
                 }
                 Opcode::Null => {
                     self.push(NULL)?;
+                }
+                Opcode::SetGlobal => {
+                    let global_index = instructions.read_u16::<byteorder::BigEndian>()? as usize;
+                    self.globals[global_index] = self.pop()?;
+                }
+                Opcode::GetGlobal => {
+                    let global_index = instructions.read_u16::<byteorder::BigEndian>()? as usize;
+                    let global = self.globals[global_index].clone();
+                    self.push(global)?;
                 }
             }
         }
@@ -275,14 +289,29 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_global_let_statements() {
+        let tests = vec![
+            ("let one = 1; one", Object::Integer(1)),
+            ("let one = 1; let two = 2; one + two", Object::Integer(3)),
+            (
+                "let one = 1; let two = one + one; one + two",
+                Object::Integer(3),
+            ),
+        ];
+
+        for (input, expected_stack) in tests {
+            run_vm_tests(input, expected_stack);
+        }
+    }
+
     fn run_vm_tests(input: &str, expected: Object) {
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
         let program = parser.parse_program().unwrap();
 
         let mut compiler = Compiler::new();
-        compiler.compile(program).unwrap();
-        let bytecode = compiler.bytecode();
+        let bytecode = compiler.compile(program).unwrap();
 
         let mut vm = VirtualMachine::new();
         vm.run(bytecode).unwrap();

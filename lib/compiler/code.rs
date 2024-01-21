@@ -119,6 +119,9 @@ pub enum Opcode {
     Jump,
 
     Null,
+
+    GetGlobal,
+    SetGlobal,
 }
 
 impl Opcode {
@@ -140,6 +143,8 @@ impl Opcode {
             Opcode::JumpNotTruthy => "JumpNotTruthy",
             Opcode::Jump => "Jump",
             Opcode::Null => "Null",
+            Opcode::GetGlobal => "GetGlobal",
+            Opcode::SetGlobal => "SetGlobal",
         }
     }
 
@@ -167,6 +172,8 @@ impl Opcode {
             Opcode::JumpNotTruthy => vec![2],
             Opcode::Jump => vec![2],
             Opcode::Null => vec![],
+            Opcode::GetGlobal => vec![2],
+            Opcode::SetGlobal => vec![2],
         }
     }
 }
@@ -192,6 +199,8 @@ impl TryFrom<u8> for Opcode {
             13 => Opcode::JumpNotTruthy,
             14 => Opcode::Jump,
             15 => Opcode::Null,
+            16 => Opcode::GetGlobal,
+            17 => Opcode::SetGlobal,
             _ => bail!("unknown opcode: {}", value),
         };
         Ok(opcode)
@@ -217,6 +226,8 @@ impl From<Opcode> for u8 {
             Opcode::JumpNotTruthy => 13,
             Opcode::Jump => 14,
             Opcode::Null => 15,
+            Opcode::GetGlobal => 16,
+            Opcode::SetGlobal => 17,
         }
     }
 }
@@ -255,6 +266,8 @@ mod tests {
             Instructions::make(Opcode::JumpNotTruthy, vec![18]).unwrap(),
             Instructions::make(Opcode::Jump, vec![65535]).unwrap(),
             Instructions::make(Opcode::Null, vec![]).unwrap(),
+            Instructions::make(Opcode::SetGlobal, vec![65535]).unwrap(),
+            Instructions::make(Opcode::GetGlobal, vec![65535]).unwrap(),
         ]);
 
         let expected = r#"0000 Add
@@ -271,6 +284,8 @@ mod tests {
 0015 JumpNotTruthy 18
 0018 Jump 65535
 0021 Null
+0022 SetGlobal 65535
+0025 GetGlobal 65535
 "#;
 
         assert_eq!(instructions.to_string(), expected);

@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 
 use crate::{
     ast::{Expression, Program, Statement},
@@ -8,11 +8,13 @@ use crate::{
 use super::{
     code::{Instructions, Opcode},
     object::Object,
+    symbol_table::SymbolTable,
 };
 
 pub struct Compiler {
     instructions: Instructions,
     constants: Vec<Object>,
+    symbol_table: SymbolTable,
     last_instruction: Option<(Opcode, usize)>,
     prev_instruction: Option<(Opcode, usize)>,
 }
@@ -25,6 +27,7 @@ pub struct Bytecode {
 impl Compiler {
     pub fn new() -> Self {
         Self {
+            symbol_table: SymbolTable::new(),
             instructions: Instructions::new(),
             constants: vec![],
             last_instruction: None,
@@ -32,19 +35,24 @@ impl Compiler {
         }
     }
 
-    pub fn bytecode(self) -> Bytecode {
-        Bytecode {
-            instructions: self.instructions,
-            constants: self.constants,
-        }
-    }
-
-    pub fn compile(&mut self, program: Program) -> Result<()> {
+    pub fn compile(&mut self, program: Program) -> Result<Bytecode> {
         for statement in program.statements.into_iter() {
             self.compile_statement(statement)?;
         }
 
-        Ok(())
+        let bytecode = Bytecode {
+            instructions: self.instructions.clone(),
+            constants: self.constants.clone(),
+        };
+
+        // We wipe the state of the compiler after compiling.
+        // But we keep the symbol table and constants around so that any accumulated
+        // state is kept like in the REPL.
+        self.instructions = Instructions::new();
+        self.last_instruction = None;
+        self.prev_instruction = None;
+
+        Ok(bytecode)
     }
 
     fn emit(&mut self, opcode: Opcode, operands: Vec<usize>) -> Result<usize> {
@@ -68,6 +76,15 @@ impl Compiler {
                     self.compile_statement(statement)?;
                 }
             }
+            Statement::Let { name, value } => {
+                self.compile_expression(value)?;
+                let symbol_name = match name {
+                    Expression::Identifier(name) => name,
+                    _ => bail!("expected identifier, got {:?}", name),
+                };
+                let symbol = self.symbol_table.define(symbol_name);
+                self.emit(Opcode::SetGlobal, vec![symbol.index])?;
+            }
             _ => bail!("unimplemented statement: {}", statement),
         }
 
@@ -76,6 +93,9 @@ impl Compiler {
 
     fn compile_expression(&mut self, expression: Expression) -> Result<()> {
         match expression {
+            Expression::Identifier(name) => {
+                self.compile_identifier_expression(name)?;
+            }
             Expression::If {
                 condition,
                 consequence,
@@ -105,7 +125,16 @@ impl Compiler {
         Ok(())
     }
 
-    fn compile_boolean_literal(&mut self, value: bool) -> Result<(), anyhow::Error> {
+    fn compile_identifier_expression(&mut self, name: String) -> Result<()> {
+        let symbol = self
+            .symbol_table
+            .resolve(&name)
+            .ok_or(anyhow!("could not find symbol {name}"))?;
+        self.emit(Opcode::GetGlobal, vec![symbol.index])?;
+        Ok(())
+    }
+
+    fn compile_boolean_literal(&mut self, value: bool) -> Result<()> {
         Ok(if value {
             self.emit(Opcode::True, vec![])?;
         } else {
@@ -113,18 +142,14 @@ impl Compiler {
         })
     }
 
-    fn compile_integer_literal(&mut self, value: i64) -> Result<(), anyhow::Error> {
+    fn compile_integer_literal(&mut self, value: i64) -> Result<()> {
         let integer = Object::Integer(value);
         self.constants.push(integer);
         self.emit(Opcode::Constant, vec![self.constants.len() - 1])?;
         Ok(())
     }
 
-    fn compile_prefix_expression(
-        &mut self,
-        right: Box<Expression>,
-        operator: Token,
-    ) -> Result<(), anyhow::Error> {
+    fn compile_prefix_expression(&mut self, right: Box<Expression>, operator: Token) -> Result<()> {
         self.compile_expression(*right)?;
         match operator {
             Token::Bang => self.emit(Opcode::Bang, vec![])?,
@@ -139,7 +164,7 @@ impl Compiler {
         operator: Token,
         right: Box<Expression>,
         left: Box<Expression>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<()> {
         // The order of the operands is important for the VM.
         // We re-order the operands for Lt to create a Gt (compiler fun).
         // E.g 1 < 2 => 2 > 1
@@ -170,7 +195,7 @@ impl Compiler {
         condition: Box<Expression>,
         consequence: Box<Statement>,
         alternative: Option<Box<Statement>>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<()> {
         self.compile_expression(*condition)?;
 
         // We add the jump instruction with a dummy value because we don't know how far we
@@ -428,6 +453,48 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_global_let_statements() {
+        let tests = vec![
+            (
+                "let one = 1; let two = 2;",
+                vec![Object::Integer(1), Object::Integer(2)],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+                    Instructions::make(Opcode::SetGlobal, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![1]).unwrap(),
+                    Instructions::make(Opcode::SetGlobal, vec![1]).unwrap(),
+                ]),
+            ),
+            (
+                "let one = 1; one;",
+                vec![Object::Integer(1)],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+                    Instructions::make(Opcode::SetGlobal, vec![0]).unwrap(),
+                    Instructions::make(Opcode::GetGlobal, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                ]),
+            ),
+            (
+                "let one = 1; let two = one; two;",
+                vec![Object::Integer(1)],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+                    Instructions::make(Opcode::SetGlobal, vec![0]).unwrap(),
+                    Instructions::make(Opcode::GetGlobal, vec![0]).unwrap(),
+                    Instructions::make(Opcode::SetGlobal, vec![1]).unwrap(),
+                    Instructions::make(Opcode::GetGlobal, vec![1]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                ]),
+            ),
+        ];
+
+        for (input, expected_constants, expected_instructions) in tests {
+            run_compiler_tests(input, expected_constants, expected_instructions);
+        }
+    }
+
     fn run_compiler_tests(
         input: &str,
         expected_constants: Vec<Object>,
@@ -438,8 +505,7 @@ mod tests {
         let program = parser.parse_program().unwrap();
 
         let mut compiler = Compiler::new();
-        compiler.compile(program).unwrap();
-        let bytecode = compiler.bytecode();
+        let bytecode = compiler.compile(program).unwrap();
 
         test_instructions(expected_instructions, bytecode.instructions);
         test_constants(expected_constants, bytecode.constants);

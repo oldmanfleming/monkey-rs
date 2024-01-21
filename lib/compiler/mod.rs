@@ -1,6 +1,7 @@
 mod code;
 mod compiler;
 mod object;
+mod symbol_table;
 mod vm;
 
 use anyhow::Result;
@@ -11,11 +12,13 @@ use crate::{Engine, Lexer, Parser};
 
 pub fn new_engine() -> Box<dyn Engine> {
     Box::new(EngineImpl {
+        compiler: Compiler::new(),
         vm: VirtualMachine::new(),
     })
 }
 
 struct EngineImpl {
+    compiler: Compiler,
     vm: VirtualMachine,
 }
 
@@ -26,11 +29,7 @@ impl Engine for EngineImpl {
 
         let program = parser.parse_program()?;
 
-        let mut compiler = Compiler::new();
-
-        compiler.compile(program)?;
-
-        let bytecode = compiler.bytecode();
+        let bytecode = self.compiler.compile(program)?;
 
         let result = self.vm.run(bytecode)?;
 
