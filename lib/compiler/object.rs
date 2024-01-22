@@ -10,7 +10,7 @@ pub enum Object {
     Boolean(bool),
     Null,
     String(String),
-    // Array(Vec<Object>),
+    Array(Vec<Object>),
     // Hash(HashMap<Object, Object>),
 }
 
@@ -41,18 +41,17 @@ impl fmt::Display for Object {
             Object::String(value) => write!(f, "{}", value),
             Object::Boolean(value) => write!(f, "{}", value),
             Object::Null => write!(f, "null"),
-            // Object::Array(values) => {
-            //     let values: Vec<String> = values.iter().map(|v| format!("{}", v)).collect();
-            //     write!(f, "[{}]", values.join(", "))
-            // }
-            // Object::Hash(hash) => {
-            //     let pairs = hash
-            //         .iter()
-            //         .map(|(k, v)| format!("{}: {}", k, v))
-            //         .collect::<Vec<String>>()
-            //         .join(", ");
-            //     write!(f, "{{{}}}", pairs)
-            // }
+            Object::Array(values) => {
+                let values: Vec<String> = values.iter().map(|v| format!("{}", v)).collect();
+                write!(f, "[{}]", values.join(", "))
+            } // Object::Hash(hash) => {
+              //     let pairs = hash
+              //         .iter()
+              //         .map(|(k, v)| format!("{}: {}", k, v))
+              //         .collect::<Vec<String>>()
+              //         .join(", ");
+              //     write!(f, "{{{}}}", pairs)
+              // }
         }
     }
 }

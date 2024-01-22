@@ -91,6 +91,16 @@ impl VirtualMachine {
                     let global = self.globals[global_index].clone();
                     self.push(global)?;
                 }
+                Opcode::Array => {
+                    let num_elements = instructions.read_u16::<byteorder::BigEndian>()? as usize;
+                    let mut elements = Vec::with_capacity(num_elements);
+                    for _ in 0..num_elements {
+                        elements.push(self.pop()?);
+                    }
+                    elements.reverse();
+                    self.push(Object::Array(elements))?;
+                }
+                _ => bail!("unknown opcode: {:?}", opcode),
             }
         }
 
@@ -327,6 +337,32 @@ mod tests {
 
         for (input, expected_stack) in tests {
             run_vm_tests(input, expected_stack);
+        }
+    }
+
+    #[test]
+    fn test_array_literals() {
+        let tests = vec![
+            ("[]", Object::Array(vec![])),
+            (
+                "[1, 2, 3]",
+                Object::Array(vec![
+                    Object::Integer(1),
+                    Object::Integer(2),
+                    Object::Integer(3),
+                ]),
+            ),
+            (
+                "[1 + 2, 3 * 4, 5 + 6]",
+                Object::Array(vec![
+                    Object::Integer(3),
+                    Object::Integer(12),
+                    Object::Integer(11),
+                ]),
+            ),
+        ];
+        for (input, expected) in tests {
+            run_vm_tests(input, expected);
         }
     }
 
