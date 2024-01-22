@@ -151,6 +151,15 @@ impl VirtualMachine {
                 };
                 self.push(result)?
             }
+            (Object::String(left), Object::String(right)) => {
+                let result = match opcode {
+                    Opcode::Add => Object::String(format!("{}{}", left, right)),
+                    Opcode::Equal => self.native_boolean_to_boolean_object(left == right),
+                    Opcode::NotEqual => self.native_boolean_to_boolean_object(left != right),
+                    _ => bail!("unknown string operator: {:?}", opcode),
+                };
+                self.push(result)?
+            }
             (left, right) => {
                 bail!(
                     "unsupported types for {:?}: {:?} + {:?}",
@@ -297,6 +306,22 @@ mod tests {
             (
                 "let one = 1; let two = one + one; one + two",
                 Object::Integer(3),
+            ),
+        ];
+
+        for (input, expected_stack) in tests {
+            run_vm_tests(input, expected_stack);
+        }
+    }
+
+    #[test]
+    fn test_string_expressions() {
+        let tests = vec![
+            ("\"monkey\"", Object::String(String::from("monkey"))),
+            ("\"mon\" + \"key\"", Object::String(String::from("monkey"))),
+            (
+                "\"mon\" + \"key\" + \"banana\"",
+                Object::String(String::from("monkeybanana")),
             ),
         ];
 

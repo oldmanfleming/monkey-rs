@@ -119,6 +119,9 @@ impl Compiler {
             Expression::BooleanLiteral(value) => {
                 self.compile_boolean_literal(value)?;
             }
+            Expression::StringLiteral(value) => {
+                self.compile_string_literal(value)?;
+            }
             _ => bail!("unimplemented expression: {:?}", expression),
         }
 
@@ -135,16 +138,24 @@ impl Compiler {
     }
 
     fn compile_boolean_literal(&mut self, value: bool) -> Result<()> {
-        Ok(if value {
+        if value {
             self.emit(Opcode::True, vec![])?;
         } else {
             self.emit(Opcode::False, vec![])?;
-        })
+        }
+        Ok(())
     }
 
     fn compile_integer_literal(&mut self, value: i64) -> Result<()> {
         let integer = Object::Integer(value);
         self.constants.push(integer);
+        self.emit(Opcode::Constant, vec![self.constants.len() - 1])?;
+        Ok(())
+    }
+
+    fn compile_string_literal(&mut self, value: String) -> Result<()> {
+        let string = Object::String(value);
+        self.constants.push(string);
         self.emit(Opcode::Constant, vec![self.constants.len() - 1])?;
         Ok(())
     }
@@ -485,6 +496,37 @@ mod tests {
                     Instructions::make(Opcode::GetGlobal, vec![0]).unwrap(),
                     Instructions::make(Opcode::SetGlobal, vec![1]).unwrap(),
                     Instructions::make(Opcode::GetGlobal, vec![1]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                ]),
+            ),
+        ];
+
+        for (input, expected_constants, expected_instructions) in tests {
+            run_compiler_tests(input, expected_constants, expected_instructions);
+        }
+    }
+
+    #[test]
+    fn test_string_expressions() {
+        let tests = vec![
+            (
+                "\"monkey\"",
+                vec![Object::String("monkey".to_string())],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                ]),
+            ),
+            (
+                "\"mon\" + \"key\"",
+                vec![
+                    Object::String("mon".to_string()),
+                    Object::String("key".to_string()),
+                ],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![1]).unwrap(),
+                    Instructions::make(Opcode::Add, vec![]).unwrap(),
                     Instructions::make(Opcode::Pop, vec![]).unwrap(),
                 ]),
             ),
