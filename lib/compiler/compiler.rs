@@ -126,15 +126,36 @@ impl Compiler {
                 self.compile_string_literal(value)?;
             }
             Expression::ArrayLiteral(elements) => {
-                let len = elements.len();
-                for element in elements.into_iter() {
-                    self.compile_expression(element)?;
-                }
-                self.emit(Opcode::Array, vec![len])?;
+                self.compile_array_literals(elements)?;
+            }
+            Expression::HashLiteral(pairs) => {
+                self.compile_hash_literal(pairs)?;
             }
             _ => bail!("unimplemented expression: {:?}", expression),
         }
 
+        Ok(())
+    }
+
+    fn compile_hash_literal(&mut self, pairs: Vec<(Expression, Expression)>) -> Result<()> {
+        let num_pairs = pairs.len();
+
+        for (key, value) in pairs.into_iter() {
+            self.compile_expression(key)?;
+            self.compile_expression(value)?;
+        }
+
+        self.emit(Opcode::Hash, vec![num_pairs])?;
+
+        Ok(())
+    }
+
+    fn compile_array_literals(&mut self, elements: Vec<Expression>) -> Result<(), anyhow::Error> {
+        let len = elements.len();
+        for element in elements.into_iter() {
+            self.compile_expression(element)?;
+        }
+        self.emit(Opcode::Array, vec![len])?;
         Ok(())
     }
 
@@ -264,6 +285,7 @@ impl Compiler {
 
 #[cfg(test)]
 mod tests {
+
     use crate::{Lexer, Parser};
 
     use super::*;
@@ -600,6 +622,68 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_hash_literals() {
+        let tests = vec![
+            (
+                "{}",
+                vec![],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::Hash, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                ]),
+            ),
+            (
+                "{1: 2, 3: 4, 5: 6}",
+                vec![
+                    Object::Integer(1),
+                    Object::Integer(2),
+                    Object::Integer(3),
+                    Object::Integer(4),
+                    Object::Integer(5),
+                    Object::Integer(6),
+                ],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![1]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![2]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![3]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![4]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![5]).unwrap(),
+                    Instructions::make(Opcode::Hash, vec![3]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                ]),
+            ),
+            (
+                "{1: 2 + 3, 4: 5 * 6}",
+                vec![
+                    Object::Integer(1),
+                    Object::Integer(2),
+                    Object::Integer(3),
+                    Object::Integer(4),
+                    Object::Integer(5),
+                    Object::Integer(6),
+                ],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![1]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![2]).unwrap(),
+                    Instructions::make(Opcode::Add, vec![]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![3]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![4]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![5]).unwrap(),
+                    Instructions::make(Opcode::Mul, vec![]).unwrap(),
+                    Instructions::make(Opcode::Hash, vec![2]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                ]),
+            ),
+        ];
+
+        for (input, expected_constants, expected_instructions) in tests {
+            run_compiler_tests(input, expected_constants, expected_instructions);
+        }
+    }
+
     fn run_compiler_tests(
         input: &str,
         expected_constants: Vec<Object>,
@@ -620,6 +704,9 @@ mod tests {
         let expected_data = expected.inner();
         let actual_data = actual.inner();
 
+        println!("expected={:?}", expected_data);
+        println!("actual={:?}", actual_data);
+
         assert_eq!(
             expected_data.len(),
             actual_data.len(),
@@ -627,6 +714,8 @@ mod tests {
             expected,
             actual
         );
+
+        println!("GOT HERE!!!");
 
         for (i, instruction) in expected_data.iter().enumerate() {
             assert_eq!(

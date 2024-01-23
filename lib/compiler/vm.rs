@@ -1,4 +1,4 @@
-use std::io::Cursor;
+use std::{collections::HashMap, io::Cursor};
 
 use anyhow::{anyhow, bail, Result};
 use byteorder::ReadBytesExt;
@@ -99,6 +99,19 @@ impl VirtualMachine {
                     }
                     elements.reverse();
                     self.push(Object::Array(elements))?;
+                }
+                Opcode::Hash => {
+                    let num_elements = instructions.read_u16::<byteorder::BigEndian>()? as usize;
+                    let mut hash = HashMap::with_capacity(num_elements * 2);
+                    for _ in 0..num_elements {
+                        let value = self.pop()?;
+                        let key = self.pop()?;
+                        if !key.hashable() {
+                            bail!("unusable as hash key: {}", key);
+                        }
+                        hash.insert(key, value);
+                    }
+                    self.push(Object::Hash(hash))?;
                 }
                 _ => bail!("unknown opcode: {:?}", opcode),
             }
@@ -361,6 +374,39 @@ mod tests {
                 ]),
             ),
         ];
+        for (input, expected) in tests {
+            run_vm_tests(input, expected);
+        }
+    }
+
+    #[test]
+    fn test_hash_literals() {
+        let tests = vec![
+            ("{}", Object::Hash(vec![].into_iter().collect())),
+            (
+                "{1: 2, 2: 3}",
+                Object::Hash(
+                    vec![
+                        (Object::Integer(1), Object::Integer(2)),
+                        (Object::Integer(2), Object::Integer(3)),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+            ),
+            (
+                "{1 + 1: 2 * 2, 3 + 3: 4 * 4}",
+                Object::Hash(
+                    vec![
+                        (Object::Integer(2), Object::Integer(4)),
+                        (Object::Integer(6), Object::Integer(16)),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+            ),
+        ];
+
         for (input, expected) in tests {
             run_vm_tests(input, expected);
         }
