@@ -125,6 +125,7 @@ pub enum Opcode {
 
     Array,
     Hash,
+    Index,
 }
 
 impl Opcode {
@@ -150,6 +151,7 @@ impl Opcode {
             Opcode::SetGlobal => "SetGlobal",
             Opcode::Array => "Array",
             Opcode::Hash => "Hash",
+            Opcode::Index => "Index",
         }
     }
 
@@ -181,6 +183,7 @@ impl Opcode {
             Opcode::SetGlobal => vec![2],
             Opcode::Array => vec![2],
             Opcode::Hash => vec![2],
+            Opcode::Index => vec![],
         }
     }
 }
@@ -210,6 +213,7 @@ impl TryFrom<u8> for Opcode {
             17 => Opcode::SetGlobal,
             18 => Opcode::Array,
             19 => Opcode::Hash,
+            20 => Opcode::Index,
             _ => bail!("unknown opcode: {}", value),
         };
         Ok(opcode)
@@ -239,6 +243,7 @@ impl From<Opcode> for u8 {
             Opcode::SetGlobal => 17,
             Opcode::Array => 18,
             Opcode::Hash => 19,
+            Opcode::Index => 20,
         }
     }
 }
@@ -281,6 +286,7 @@ mod tests {
             Instructions::make(Opcode::GetGlobal, vec![65535]).unwrap(),
             Instructions::make(Opcode::Array, vec![0]).unwrap(),
             Instructions::make(Opcode::Hash, vec![0]).unwrap(),
+            Instructions::make(Opcode::Index, vec![]).unwrap(),
         ]);
 
         let expected = r#"0000 Add
@@ -301,6 +307,7 @@ mod tests {
 0025 GetGlobal 65535
 0028 Array 0
 0031 Hash 0
+0034 Index
 "#;
 
         assert_eq!(instructions.to_string(), expected);

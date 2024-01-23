@@ -131,9 +131,23 @@ impl Compiler {
             Expression::HashLiteral(pairs) => {
                 self.compile_hash_literal(pairs)?;
             }
+            Expression::Index { left, index } => {
+                self.compile_index_expression(left, index)?;
+            }
             _ => bail!("unimplemented expression: {:?}", expression),
         }
 
+        Ok(())
+    }
+
+    fn compile_index_expression(
+        &mut self,
+        left: Box<Expression>,
+        index: Box<Expression>,
+    ) -> Result<()> {
+        self.compile_expression(*left)?;
+        self.compile_expression(*index)?;
+        self.emit(Opcode::Index, vec![])?;
         Ok(())
     }
 
@@ -674,6 +688,56 @@ mod tests {
                     Instructions::make(Opcode::Constant, vec![5]).unwrap(),
                     Instructions::make(Opcode::Mul, vec![]).unwrap(),
                     Instructions::make(Opcode::Hash, vec![2]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                ]),
+            ),
+        ];
+
+        for (input, expected_constants, expected_instructions) in tests {
+            run_compiler_tests(input, expected_constants, expected_instructions);
+        }
+    }
+
+    #[test]
+    fn test_index_expressions() {
+        let tests = vec![
+            (
+                "[1, 2, 3][1 + 1]",
+                vec![
+                    Object::Integer(1),
+                    Object::Integer(2),
+                    Object::Integer(3),
+                    Object::Integer(1),
+                    Object::Integer(1),
+                ],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![1]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![2]).unwrap(),
+                    Instructions::make(Opcode::Array, vec![3]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![3]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![4]).unwrap(),
+                    Instructions::make(Opcode::Add, vec![]).unwrap(),
+                    Instructions::make(Opcode::Index, vec![]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                ]),
+            ),
+            (
+                "{1: 2}[2 - 1]",
+                vec![
+                    Object::Integer(1),
+                    Object::Integer(2),
+                    Object::Integer(2),
+                    Object::Integer(1),
+                ],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![1]).unwrap(),
+                    Instructions::make(Opcode::Hash, vec![1]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![2]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![3]).unwrap(),
+                    Instructions::make(Opcode::Sub, vec![]).unwrap(),
+                    Instructions::make(Opcode::Index, vec![]).unwrap(),
                     Instructions::make(Opcode::Pop, vec![]).unwrap(),
                 ]),
             ),

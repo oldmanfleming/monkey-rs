@@ -113,6 +113,11 @@ impl VirtualMachine {
                     }
                     self.push(Object::Hash(hash))?;
                 }
+                Opcode::Index => {
+                    let index = self.pop()?;
+                    let left = self.pop()?;
+                    self.execute_index_expression(left, index)?;
+                }
                 _ => bail!("unknown opcode: {:?}", opcode),
             }
         }
@@ -141,6 +146,29 @@ impl VirtualMachine {
 
         self.stack_pointer -= 1;
         Ok(self.stack[self.stack_pointer].clone())
+    }
+
+    fn execute_index_expression(&mut self, left: Object, index: Object) -> Result<()> {
+        match (left, index) {
+            (Object::Array(elements), Object::Integer(index)) => {
+                let element = elements.get(index as usize);
+                match element {
+                    Some(value) => self.push(value.clone())?,
+                    None => self.push(NULL)?,
+                }
+            }
+            (Object::Hash(pairs), index) => {
+                if !index.hashable() {
+                    bail!("unusable as hash key: {}", index);
+                }
+                match pairs.get(&index) {
+                    Some(value) => self.push(value.clone())?,
+                    None => self.push(NULL)?,
+                }
+            }
+            (left, _) => bail!("index operator not supported: {:?}", left),
+        }
+        Ok(())
     }
 
     fn execute_binary_operation(&mut self, opcode: Opcode) -> Result<(), anyhow::Error> {
@@ -405,6 +433,26 @@ mod tests {
                     .collect(),
                 ),
             ),
+        ];
+
+        for (input, expected) in tests {
+            run_vm_tests(input, expected);
+        }
+    }
+
+    #[test]
+    fn test_index_expressions() {
+        let tests = vec![
+            ("[1, 2, 3][1]", Object::Integer(2)),
+            ("[1, 2, 3][0 + 2]", Object::Integer(3)),
+            ("[[1, 2, 3]][0][0]", Object::Integer(1)),
+            ("[][0]", Object::Null),
+            ("[1, 2, 3][99]", Object::Null),
+            ("[1][-1]", Object::Null),
+            ("{1: 1, 2: 2}[1]", Object::Integer(1)),
+            ("{1: 1, 2: 2}[2]", Object::Integer(2)),
+            ("{1: 1}[0]", Object::Null),
+            ("{}[0]", Object::Null),
         ];
 
         for (input, expected) in tests {
