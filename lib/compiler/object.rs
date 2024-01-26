@@ -4,6 +4,8 @@ use std::{
     hash::{Hash, Hasher},
 };
 
+use super::code::Instructions;
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Object {
     Integer(i64),
@@ -12,6 +14,7 @@ pub enum Object {
     String(String),
     Array(Vec<Object>),
     Hash(HashMap<Object, Object>),
+    CompiledFunction { instructions: Instructions },
 }
 
 impl Object {
@@ -52,6 +55,9 @@ impl fmt::Display for Object {
                     .collect::<Vec<String>>()
                     .join(", ");
                 write!(f, "{{{}}}", pairs)
+            }
+            Object::CompiledFunction { instructions } => {
+                write!(f, "fn(){{ {} }}", instructions)
             }
         }
     }

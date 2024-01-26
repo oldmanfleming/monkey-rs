@@ -3,7 +3,7 @@ use std::{fmt, io::Cursor};
 use anyhow::{bail, Context, Result};
 use byteorder::{ReadBytesExt, WriteBytesExt};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Instructions(Vec<u8>);
 
 impl Instructions {
@@ -126,6 +126,10 @@ pub enum Opcode {
     Array,
     Hash,
     Index,
+
+    Call,
+    ReturnValue,
+    Return,
 }
 
 impl Opcode {
@@ -152,6 +156,9 @@ impl Opcode {
             Opcode::Array => "Array",
             Opcode::Hash => "Hash",
             Opcode::Index => "Index",
+            Opcode::Call => "Call",
+            Opcode::ReturnValue => "ReturnValue",
+            Opcode::Return => "Return",
         }
     }
 
@@ -184,6 +191,9 @@ impl Opcode {
             Opcode::Array => vec![2],
             Opcode::Hash => vec![2],
             Opcode::Index => vec![],
+            Opcode::Call => vec![],
+            Opcode::ReturnValue => vec![],
+            Opcode::Return => vec![],
         }
     }
 }
@@ -214,6 +224,9 @@ impl TryFrom<u8> for Opcode {
             18 => Opcode::Array,
             19 => Opcode::Hash,
             20 => Opcode::Index,
+            21 => Opcode::Call,
+            22 => Opcode::ReturnValue,
+            23 => Opcode::Return,
             _ => bail!("unknown opcode: {}", value),
         };
         Ok(opcode)
@@ -244,6 +257,9 @@ impl From<Opcode> for u8 {
             Opcode::Array => 18,
             Opcode::Hash => 19,
             Opcode::Index => 20,
+            Opcode::Call => 21,
+            Opcode::ReturnValue => 22,
+            Opcode::Return => 23,
         }
     }
 }
@@ -287,6 +303,9 @@ mod tests {
             Instructions::make(Opcode::Array, vec![0]).unwrap(),
             Instructions::make(Opcode::Hash, vec![0]).unwrap(),
             Instructions::make(Opcode::Index, vec![]).unwrap(),
+            Instructions::make(Opcode::Call, vec![]).unwrap(),
+            Instructions::make(Opcode::ReturnValue, vec![]).unwrap(),
+            Instructions::make(Opcode::Return, vec![]).unwrap(),
         ]);
 
         let expected = r#"0000 Add
@@ -308,6 +327,9 @@ mod tests {
 0028 Array 0
 0031 Hash 0
 0034 Index
+0035 Call
+0036 ReturnValue
+0037 Return
 "#;
 
         assert_eq!(instructions.to_string(), expected);
