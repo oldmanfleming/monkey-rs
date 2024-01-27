@@ -174,8 +174,30 @@ impl Compiler {
             Expression::FunctionLiteral { parameters, body } => {
                 self.compile_function_literal(parameters, body)?;
             }
-            _ => bail!("unimplemented expression: {:?}", expression),
+            Expression::Call {
+                function,
+                arguments,
+            } => {
+                self.compile_call_expression(function, arguments)?;
+            }
         }
+
+        Ok(())
+    }
+
+    fn compile_call_expression(
+        &mut self,
+        function: Box<Expression>,
+        _arguments: Vec<Expression>,
+    ) -> Result<()> {
+        self.compile_expression(*function)?;
+
+        // for argument in arguments.into_iter() {
+        //     self.compile_expression(argument)?;
+        // }
+
+        // self.emit(Opcode::Call, vec![arguments.len()])?;
+        self.emit(Opcode::Call, vec![])?;
 
         Ok(())
     }
@@ -975,6 +997,101 @@ mod tests {
             ),
         ];
 
+        for (input, expected_constants, expected_instructions) in tests {
+            run_compiler_tests(input, expected_constants, expected_instructions);
+        }
+    }
+
+    #[test]
+    fn test_function_calls() {
+        let tests = vec![
+            (
+                "fn() { 24 }();",
+                vec![
+                    Object::Integer(24),
+                    Object::CompiledFunction {
+                        instructions: Instructions::from(vec![
+                            Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+                            Instructions::make(Opcode::ReturnValue, vec![]).unwrap(),
+                        ]),
+                    },
+                ],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::Constant, vec![1]).unwrap(),
+                    Instructions::make(Opcode::Call, vec![]).unwrap(),
+                    // Instructions::make(Opcode::Call, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                ]),
+            ),
+            (
+                "let noArg = fn() { 24 }; noArg();",
+                vec![
+                    Object::Integer(24),
+                    Object::CompiledFunction {
+                        instructions: Instructions::from(vec![
+                            Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+                            Instructions::make(Opcode::ReturnValue, vec![]).unwrap(),
+                        ]),
+                    },
+                ],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::Constant, vec![1]).unwrap(),
+                    Instructions::make(Opcode::SetGlobal, vec![0]).unwrap(),
+                    Instructions::make(Opcode::GetGlobal, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Call, vec![]).unwrap(),
+                    // Instructions::make(Opcode::Call, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                ]),
+            ),
+            //     (
+            //         "let oneArg = fn(a) { a }; oneArg(24);",
+            //         vec![
+            //             Object::CompiledFunction {
+            //                 instructions: Instructions::from(vec![
+            //                     Instructions::make(Opcode::GetLocal, vec![0]).unwrap(),
+            //                     Instructions::make(Opcode::ReturnValue, vec![]).unwrap(),
+            //                 ]),
+            //             },
+            //             Object::Integer(24),
+            //         ],
+            //         Instructions::from(vec![
+            //             Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+            //             Instructions::make(Opcode::SetGlobal, vec![0]).unwrap(),
+            //             Instructions::make(Opcode::GetGlobal, vec![0]).unwrap(),
+            //             Instructions::make(Opcode::Constant, vec![1]).unwrap(),
+            //             Instructions::make(Opcode::Call, vec![1]).unwrap(),
+            //             Instructions::make(Opcode::Pop, vec![]).unwrap(),
+            //         ]),
+            //     ),
+            //     (
+            //         "let manyArg = fn(a, b, c) { a; b; c }; manyArg(24, 25, 26);",
+            //         vec![
+            //             Object::CompiledFunction {
+            //                 instructions: Instructions::from(vec![
+            //                     Instructions::make(Opcode::GetLocal, vec![0]).unwrap(),
+            //                     Instructions::make(Opcode::Pop, vec![]).unwrap(),
+            //                     Instructions::make(Opcode::GetLocal, vec![1]).unwrap(),
+            //                     Instructions::make(Opcode::Pop, vec![]).unwrap(),
+            //                     Instructions::make(Opcode::GetLocal, vec![2]).unwrap(),
+            //                     Instructions::make(Opcode::ReturnValue, vec![]).unwrap(),
+            //                 ]),
+            //             },
+            //             Object::Integer(24),
+            //             Object::Integer(25),
+            //             Object::Integer(26),
+            //         ],
+            //         Instructions::from(vec![
+            //             Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+            //             Instructions::make(Opcode::SetGlobal, vec![0]).unwrap(),
+            //             Instructions::make(Opcode::GetGlobal, vec![0]).unwrap(),
+            //             Instructions::make(Opcode::Constant, vec![1]).unwrap(),
+            //             Instructions::make(Opcode::Constant, vec![2]).unwrap(),
+            //             Instructions::make(Opcode::Constant, vec![3]).unwrap(),
+            //             Instructions::make(Opcode::Call, vec![3]).unwrap(),
+            //             Instructions::make(Opcode::Pop, vec![]).unwrap(),
+            //         ]),
+            //     ),
+        ];
         for (input, expected_constants, expected_instructions) in tests {
             run_compiler_tests(input, expected_constants, expected_instructions);
         }

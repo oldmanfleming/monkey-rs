@@ -7,42 +7,68 @@ use super::{code::Opcode, compiler::Bytecode, object::Object};
 
 const STACK_SIZE: usize = 2048;
 const GLOBALS_SIZE: usize = 65536;
+const FRAMES_SIZE: usize = 1024;
 
 const NULL: Object = Object::Null;
 const TRUE: Object = Object::Boolean(true);
 const FALSE: Object = Object::Boolean(false);
 
-pub struct VirtualMachine {
-    stack: Vec<Object>,
-    stack_pointer: usize,
+#[derive(Debug, Clone)]
+struct Frame {
+    instructions: Cursor<Vec<u8>>,
+}
 
+impl Frame {
+    fn new(function: &Object) -> Self {
+        let instructions = match function {
+            Object::CompiledFunction { instructions } => Cursor::new(instructions.inner().clone()),
+            _ => panic!("not a function: {:?}", function),
+        };
+        Self { instructions }
+    }
+
+    fn instructions(&mut self) -> &mut Cursor<Vec<u8>> {
+        &mut self.instructions
+    }
+}
+
+pub struct VirtualMachine {
+    constants: Vec<Object>,
     globals: Vec<Object>,
+
+    stack: Vec<Object>,
+    frames: Vec<Frame>,
+    last_popped_elem: Option<Object>,
 }
 
 impl VirtualMachine {
     pub fn new() -> Self {
         Self {
-            stack: vec![NULL; STACK_SIZE],
-            stack_pointer: 0,
-
+            constants: vec![],
             globals: vec![NULL; GLOBALS_SIZE],
+            stack: Vec::with_capacity(STACK_SIZE),
+            frames: Vec::with_capacity(FRAMES_SIZE),
+            last_popped_elem: None,
         }
     }
 
-    pub fn last_popped_elem(&self) -> Option<&Object> {
-        self.stack.get(self.stack_pointer)
-    }
-
     pub fn run(&mut self, bytecode: Bytecode) -> Result<Object> {
-        let mut instructions = Cursor::new(bytecode.instructions.inner());
+        let main_function = Object::CompiledFunction {
+            instructions: bytecode.instructions,
+        };
+        let main_frame = Frame::new(&main_function);
+        self.frames.push(main_frame);
+        self.constants = bytecode.constants;
 
-        while !instructions.is_empty() {
-            let opcode = Opcode::try_from(instructions.read_u8()?)?;
+        while !self.current_instructions()?.is_empty() {
+            let opcode = Opcode::try_from(self.current_instructions()?.read_u8()?)?;
             match opcode {
                 Opcode::Constant => {
-                    let constant_index = instructions.read_u16::<byteorder::BigEndian>()? as usize;
-                    let constant = bytecode.constants[constant_index].clone();
-                    self.push(constant)?;
+                    let constant_index =
+                        self.current_instructions()?
+                            .read_u16::<byteorder::BigEndian>()? as usize;
+                    let constant = self.constants[constant_index].clone();
+                    self.push(constant);
                 }
                 Opcode::Add
                 | Opcode::Sub
@@ -57,10 +83,10 @@ impl VirtualMachine {
                     self.pop()?;
                 }
                 Opcode::True => {
-                    self.push(TRUE)?;
+                    self.push(TRUE);
                 }
                 Opcode::False => {
-                    self.push(FALSE)?;
+                    self.push(FALSE);
                 }
                 Opcode::Minus => {
                     self.execute_minus_operator()?;
@@ -69,39 +95,50 @@ impl VirtualMachine {
                     self.execute_bang_operator()?;
                 }
                 Opcode::Jump => {
+                    let instructions = self.current_instructions()?;
                     let position = instructions.read_u16::<byteorder::BigEndian>()? as u64;
                     instructions.set_position(position);
                 }
                 Opcode::JumpNotTruthy => {
-                    let position = instructions.read_u16::<byteorder::BigEndian>()? as u64;
+                    let position =
+                        self.current_instructions()?
+                            .read_u16::<byteorder::BigEndian>()? as u64;
                     let condition = self.pop()?;
                     if !self.is_truthy(condition) {
-                        instructions.set_position(position);
+                        self.current_instructions()?.set_position(position);
                     }
                 }
                 Opcode::Null => {
-                    self.push(NULL)?;
+                    self.push(NULL);
                 }
                 Opcode::SetGlobal => {
-                    let global_index = instructions.read_u16::<byteorder::BigEndian>()? as usize;
+                    let global_index =
+                        self.current_instructions()?
+                            .read_u16::<byteorder::BigEndian>()? as usize;
                     self.globals[global_index] = self.pop()?;
                 }
                 Opcode::GetGlobal => {
-                    let global_index = instructions.read_u16::<byteorder::BigEndian>()? as usize;
+                    let global_index =
+                        self.current_instructions()?
+                            .read_u16::<byteorder::BigEndian>()? as usize;
                     let global = self.globals[global_index].clone();
-                    self.push(global)?;
+                    self.push(global);
                 }
                 Opcode::Array => {
-                    let num_elements = instructions.read_u16::<byteorder::BigEndian>()? as usize;
+                    let num_elements =
+                        self.current_instructions()?
+                            .read_u16::<byteorder::BigEndian>()? as usize;
                     let mut elements = Vec::with_capacity(num_elements);
                     for _ in 0..num_elements {
                         elements.push(self.pop()?);
                     }
                     elements.reverse();
-                    self.push(Object::Array(elements))?;
+                    self.push(Object::Array(elements));
                 }
                 Opcode::Hash => {
-                    let num_elements = instructions.read_u16::<byteorder::BigEndian>()? as usize;
+                    let num_elements =
+                        self.current_instructions()?
+                            .read_u16::<byteorder::BigEndian>()? as usize;
                     let mut hash = HashMap::with_capacity(num_elements * 2);
                     for _ in 0..num_elements {
                         let value = self.pop()?;
@@ -111,12 +148,35 @@ impl VirtualMachine {
                         }
                         hash.insert(key, value);
                     }
-                    self.push(Object::Hash(hash))?;
+                    self.push(Object::Hash(hash));
                 }
                 Opcode::Index => {
                     let index = self.pop()?;
                     let left = self.pop()?;
                     self.execute_index_expression(left, index)?;
+                }
+                Opcode::Call => {
+                    // let num_args = self.current_instructions()?.read_u8()? as usize;
+                    // We don't pop from the stack here, poping the function will be the job of the return opcodes
+                    let function = self.stack.last().ok_or(anyhow!("no function found"))?;
+                    match function {
+                        Object::CompiledFunction { .. } => {
+                            let frame = Frame::new(function);
+                            self.push_frame(frame);
+                        }
+                        _ => bail!("calling non-function: {:?}", function),
+                    }
+                }
+                Opcode::ReturnValue => {
+                    let return_value = self.pop()?;
+                    self.pop_frame()?;
+                    self.pop()?;
+                    self.push(return_value);
+                }
+                Opcode::Return => {
+                    self.pop_frame()?;
+                    self.pop()?;
+                    self.push(NULL);
                 }
                 _ => bail!("unknown opcode: {:?}", opcode),
             }
@@ -128,24 +188,38 @@ impl VirtualMachine {
             .clone())
     }
 
-    fn push(&mut self, object: Object) -> Result<()> {
-        if self.stack_pointer >= STACK_SIZE {
-            bail!("stack overflow");
-        }
+    fn current_instructions(&mut self) -> Result<&mut Cursor<Vec<u8>>> {
+        Ok(self
+            .frames
+            .last_mut()
+            .ok_or(anyhow!("no frame found"))?
+            .instructions())
+    }
 
-        self.stack[self.stack_pointer] = object;
-        self.stack_pointer += 1;
+    fn push_frame(&mut self, frame: Frame) {
+        self.frames.push(frame)
+    }
 
-        Ok(())
+    fn pop_frame(&mut self) -> Result<Frame> {
+        self.frames.pop().ok_or(anyhow!("no frame found"))
+    }
+
+    fn push(&mut self, object: Object) {
+        self.stack.push(object);
     }
 
     fn pop(&mut self) -> Result<Object> {
-        if self.stack_pointer == 0 {
-            bail!("stack underflow");
+        match self.stack.pop() {
+            Some(object) => {
+                self.last_popped_elem = Some(object.clone());
+                Ok(object)
+            }
+            None => bail!("stack is empty"),
         }
+    }
 
-        self.stack_pointer -= 1;
-        Ok(self.stack[self.stack_pointer].clone())
+    fn last_popped_elem(&self) -> Option<&Object> {
+        self.last_popped_elem.as_ref()
     }
 
     fn execute_index_expression(&mut self, left: Object, index: Object) -> Result<()> {
@@ -153,8 +227,8 @@ impl VirtualMachine {
             (Object::Array(elements), Object::Integer(index)) => {
                 let element = elements.get(index as usize);
                 match element {
-                    Some(value) => self.push(value.clone())?,
-                    None => self.push(NULL)?,
+                    Some(value) => self.push(value.clone()),
+                    None => self.push(NULL),
                 }
             }
             (Object::Hash(pairs), index) => {
@@ -162,8 +236,8 @@ impl VirtualMachine {
                     bail!("unusable as hash key: {}", index);
                 }
                 match pairs.get(&index) {
-                    Some(value) => self.push(value.clone())?,
-                    None => self.push(NULL)?,
+                    Some(value) => self.push(value.clone()),
+                    None => self.push(NULL),
                 }
             }
             (left, _) => bail!("index operator not supported: {:?}", left),
@@ -192,7 +266,7 @@ impl VirtualMachine {
                     Opcode::GreaterThan => self.native_boolean_to_boolean_object(left > right),
                     _ => bail!("unknown integer operator: {:?}", opcode),
                 };
-                self.push(result)?
+                self.push(result)
             }
             (Object::Boolean(left), Object::Boolean(right)) => {
                 let result = match opcode {
@@ -200,7 +274,7 @@ impl VirtualMachine {
                     Opcode::NotEqual => self.native_boolean_to_boolean_object(left != right),
                     _ => bail!("unknown boolean operator: {:?}", opcode),
                 };
-                self.push(result)?
+                self.push(result)
             }
             (Object::String(left), Object::String(right)) => {
                 let result = match opcode {
@@ -209,7 +283,7 @@ impl VirtualMachine {
                     Opcode::NotEqual => self.native_boolean_to_boolean_object(left != right),
                     _ => bail!("unknown string operator: {:?}", opcode),
                 };
-                self.push(result)?
+                self.push(result)
             }
             (left, right) => {
                 bail!(
@@ -223,14 +297,6 @@ impl VirtualMachine {
         Ok(())
     }
 
-    fn native_boolean_to_boolean_object(&self, input: bool) -> Object {
-        if input {
-            TRUE
-        } else {
-            FALSE
-        }
-    }
-
     fn is_truthy(&self, object: Object) -> bool {
         match object {
             Object::Null => false,
@@ -239,13 +305,21 @@ impl VirtualMachine {
         }
     }
 
+    fn native_boolean_to_boolean_object(&self, input: bool) -> Object {
+        if input {
+            TRUE
+        } else {
+            FALSE
+        }
+    }
+
     fn execute_bang_operator(&mut self) -> Result<()> {
         let operand = self.pop()?;
         match operand {
-            TRUE => self.push(FALSE)?,
-            FALSE => self.push(TRUE)?,
-            NULL => self.push(TRUE)?,
-            _ => self.push(FALSE)?,
+            TRUE => self.push(FALSE),
+            FALSE => self.push(TRUE),
+            NULL => self.push(TRUE),
+            _ => self.push(FALSE),
         };
         Ok(())
     }
@@ -254,7 +328,7 @@ impl VirtualMachine {
         let operand = self.pop()?;
         Ok(match operand {
             Object::Integer(value) => {
-                self.push(Object::Integer(-value))?;
+                self.push(Object::Integer(-value));
             }
             _ => bail!("unsupported type for negation: {:?}", operand),
         })
@@ -453,6 +527,76 @@ mod tests {
             ("{1: 1, 2: 2}[2]", Object::Integer(2)),
             ("{1: 1}[0]", Object::Null),
             ("{}[0]", Object::Null),
+        ];
+
+        for (input, expected) in tests {
+            run_vm_tests(input, expected);
+        }
+    }
+
+    #[test]
+    fn test_calling_functions_without_arguments() {
+        let tests = vec![
+            (
+                "let fivePlusTen = fn() { 5 + 10; }; fivePlusTen();",
+                Object::Integer(15),
+            ),
+            (
+                "let one = fn() { 1; }; let two = fn() { 2; }; one() + two()",
+                Object::Integer(3),
+            ),
+            (
+                "let a = fn() { 1 }; let b = fn() { a() + 1 }; let c = fn() { b() + 1 }; c()",
+                Object::Integer(3),
+            ),
+        ];
+
+        for (input, expected) in tests {
+            run_vm_tests(input, expected);
+        }
+    }
+
+    #[test]
+    fn test_functions_with_return_statement() {
+        let tests = vec![
+            (
+                "let earlyExit = fn() { return 99; 100; }; earlyExit();",
+                Object::Integer(99),
+            ),
+            (
+                "let earlyExit = fn() { return 99; return 100; }; earlyExit();",
+                Object::Integer(99),
+            ),
+        ];
+
+        for (input, expected) in tests {
+            run_vm_tests(input, expected);
+        }
+    }
+
+    #[test]
+    fn test_functions_without_return_value() {
+        let tests = vec![
+            ("let noReturn = fn() { }; noReturn();", Object::Null),
+            ("let noReturn = fn() { }; let noReturnTwo = fn() { noReturn(); }; noReturn(); noReturnTwo();", Object::Null),
+        ];
+
+        for (input, expected) in tests {
+            run_vm_tests(input, expected);
+        }
+    }
+
+    #[test]
+    fn test_first_class_functions() {
+        let tests = vec![
+            (
+                "let returnsOne = fn() { 1; }; let returnsOneReturner = fn() { returnsOne; }; returnsOneReturner()();",
+                Object::Integer(1),
+            ),
+            (
+                "let returnsOneReturner = fn() { let returnsOne = fn() { 1; }; returnsOne; }; returnsOneReturner()();",
+                Object::Integer(1),
+            ),
         ];
 
         for (input, expected) in tests {

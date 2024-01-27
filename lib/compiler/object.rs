@@ -56,8 +56,8 @@ impl fmt::Display for Object {
                     .join(", ");
                 write!(f, "{{{}}}", pairs)
             }
-            Object::CompiledFunction { instructions } => {
-                write!(f, "fn(){{ {} }}", instructions)
+            Object::CompiledFunction { .. } => {
+                write!(f, "fn(){{...}}")
             }
         }
     }
