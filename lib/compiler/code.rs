@@ -130,6 +130,9 @@ pub enum Opcode {
     Call,
     ReturnValue,
     Return,
+
+    GetLocal,
+    SetLocal,
 }
 
 impl Opcode {
@@ -159,6 +162,8 @@ impl Opcode {
             Opcode::Call => "Call",
             Opcode::ReturnValue => "ReturnValue",
             Opcode::Return => "Return",
+            Opcode::GetLocal => "GetLocal",
+            Opcode::SetLocal => "SetLocal",
         }
     }
 
@@ -194,6 +199,8 @@ impl Opcode {
             Opcode::Call => vec![],
             Opcode::ReturnValue => vec![],
             Opcode::Return => vec![],
+            Opcode::GetLocal => vec![1],
+            Opcode::SetLocal => vec![1],
         }
     }
 }
@@ -227,6 +234,8 @@ impl TryFrom<u8> for Opcode {
             21 => Opcode::Call,
             22 => Opcode::ReturnValue,
             23 => Opcode::Return,
+            24 => Opcode::GetLocal,
+            25 => Opcode::SetLocal,
             _ => bail!("unknown opcode: {}", value),
         };
         Ok(opcode)
@@ -260,6 +269,8 @@ impl From<Opcode> for u8 {
             Opcode::Call => 21,
             Opcode::ReturnValue => 22,
             Opcode::Return => 23,
+            Opcode::GetLocal => 24,
+            Opcode::SetLocal => 25,
         }
     }
 }
@@ -273,6 +284,7 @@ mod tests {
         let tests = vec![
             (Opcode::Constant, vec![65534], vec![0u8, 255u8, 254u8]),
             (Opcode::Add, vec![], vec![1u8]),
+            (Opcode::SetLocal, vec![2], vec![25u8, 2u8]),
         ];
 
         for (opcode, operands, expected) in tests {
@@ -306,6 +318,8 @@ mod tests {
             Instructions::make(Opcode::Call, vec![]).unwrap(),
             Instructions::make(Opcode::ReturnValue, vec![]).unwrap(),
             Instructions::make(Opcode::Return, vec![]).unwrap(),
+            Instructions::make(Opcode::SetLocal, vec![255]).unwrap(),
+            Instructions::make(Opcode::GetLocal, vec![255]).unwrap(),
         ]);
 
         let expected = r#"0000 Add
@@ -330,6 +344,8 @@ mod tests {
 0035 Call
 0036 ReturnValue
 0037 Return
+0038 SetLocal 255
+0040 GetLocal 255
 "#;
 
         assert_eq!(instructions.to_string(), expected);

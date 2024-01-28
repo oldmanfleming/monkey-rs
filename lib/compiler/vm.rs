@@ -3,7 +3,11 @@ use std::{collections::HashMap, io::Cursor};
 use anyhow::{anyhow, bail, Result};
 use byteorder::ReadBytesExt;
 
-use super::{code::Opcode, compiler::Bytecode, object::Object};
+use super::{
+    code::{Instructions, Opcode},
+    compiler::Bytecode,
+    object::Object,
+};
 
 const STACK_SIZE: usize = 2048;
 const GLOBALS_SIZE: usize = 65536;
@@ -16,15 +20,15 @@ const FALSE: Object = Object::Boolean(false);
 #[derive(Debug, Clone)]
 struct Frame {
     instructions: Cursor<Vec<u8>>,
+    base_pointer: usize,
 }
 
 impl Frame {
-    fn new(function: &Object) -> Self {
-        let instructions = match function {
-            Object::CompiledFunction { instructions } => Cursor::new(instructions.inner().clone()),
-            _ => panic!("not a function: {:?}", function),
-        };
-        Self { instructions }
+    fn new(instructions: &Instructions, base_pointer: usize) -> Self {
+        Self {
+            instructions: Cursor::new(instructions.inner().clone()),
+            base_pointer,
+        }
     }
 
     fn instructions(&mut self) -> &mut Cursor<Vec<u8>> {
@@ -53,10 +57,7 @@ impl VirtualMachine {
     }
 
     pub fn run(&mut self, bytecode: Bytecode) -> Result<Object> {
-        let main_function = Object::CompiledFunction {
-            instructions: bytecode.instructions,
-        };
-        let main_frame = Frame::new(&main_function);
+        let main_frame = Frame::new(&bytecode.instructions, 0);
         self.frames = Vec::with_capacity(FRAMES_SIZE);
         self.frames.push(main_frame);
         self.constants = bytecode.constants;
@@ -159,25 +160,45 @@ impl VirtualMachine {
                 Opcode::Call => {
                     // let num_args = self.current_instructions()?.read_u8()? as usize;
                     // We don't pop from the stack here, poping the function will be the job of the return opcodes
-                    let function = self.stack.last().ok_or(anyhow!("no function found"))?;
-                    match function {
-                        Object::CompiledFunction { .. } => {
-                            let frame = Frame::new(function);
+                    match self.stack.last().ok_or(anyhow!("no function found"))? {
+                        Object::CompiledFunction {
+                            instructions,
+                            num_locals,
+                        } => {
+                            let num_locals = num_locals.clone();
+                            let frame = Frame::new(instructions, self.stack.len() - 1);
                             self.push_frame(frame);
+                            for _ in 0..num_locals {
+                                self.push(NULL);
+                            }
                         }
-                        _ => bail!("calling non-function: {:?}", function),
+                        object => bail!("calling non-function: {:?}", object),
                     }
                 }
                 Opcode::ReturnValue => {
                     let return_value = self.pop()?;
-                    self.pop_frame()?;
-                    self.pop()?;
+                    let frame = self.pop_frame()?;
+                    self.stack.drain(frame.base_pointer..);
                     self.push(return_value);
                 }
                 Opcode::Return => {
-                    self.pop_frame()?;
-                    self.pop()?;
+                    let frame = self.pop_frame()?;
+                    self.stack.drain(frame.base_pointer..);
                     self.push(NULL);
+                }
+                Opcode::SetLocal => {
+                    let local_index = self.current_instructions()?.read_u8()? as usize;
+                    let frame = self.frames.last().ok_or(anyhow!("no frame found"))?;
+                    let local = frame.base_pointer + local_index;
+                    let value = self.pop()?;
+                    self.stack[local] = value;
+                }
+                Opcode::GetLocal => {
+                    let local_index = self.current_instructions()?.read_u8()? as usize;
+                    let frame = self.frames.last().ok_or(anyhow!("no frame found"))?;
+                    let local = frame.base_pointer + local_index;
+                    let value = self.stack[local].clone();
+                    self.push(value);
                 }
                 _ => bail!("unknown opcode: {:?}", opcode),
             }
@@ -597,6 +618,36 @@ mod tests {
             (
                 "let returnsOneReturner = fn() { let returnsOne = fn() { 1; }; returnsOne; }; returnsOneReturner()();",
                 Object::Integer(1),
+            ),
+        ];
+
+        for (input, expected) in tests {
+            run_vm_tests(input, expected);
+        }
+    }
+
+    #[test]
+    fn test_calling_functions_with_bindings() {
+        let tests = vec![
+            (
+                "let one = fn() { let one = 1; one }; one();",
+                Object::Integer(1),
+            ),
+            (
+                "let oneAndTwo = fn() { let one = 1; let two = 2; one + two; }; oneAndTwo();",
+                Object::Integer(3),
+            ),
+            (
+                "let oneAndTwo = fn() { let one = 1; let two = 2; one + two; }; let threeAndFour = fn() { let three = 3; let four = 4; three + four; }; oneAndTwo() + threeAndFour();",
+                Object::Integer(10),
+            ),
+            (
+                "let firstFoobar = fn() { let foobar = 50; foobar; }; let secondFoobar = fn() { let foobar = 100; foobar; }; firstFoobar() + secondFoobar();",
+                Object::Integer(150),
+            ),
+            (
+                "let globalSeed = 50; let minusOne = fn() { let num = 1; globalSeed - num; }; let minusTwo = fn() { let num = 2; globalSeed - num; }; minusOne() + minusTwo();",
+                Object::Integer(97),
             ),
         ];
 

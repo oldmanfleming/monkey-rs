@@ -14,7 +14,10 @@ pub enum Object {
     String(String),
     Array(Vec<Object>),
     Hash(HashMap<Object, Object>),
-    CompiledFunction { instructions: Instructions },
+    CompiledFunction {
+        instructions: Instructions,
+        num_locals: usize,
+    },
 }
 
 impl Object {
