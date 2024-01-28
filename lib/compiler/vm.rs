@@ -47,7 +47,7 @@ impl VirtualMachine {
             constants: vec![],
             globals: vec![NULL; GLOBALS_SIZE],
             stack: Vec::with_capacity(STACK_SIZE),
-            frames: Vec::with_capacity(FRAMES_SIZE),
+            frames: vec![],
             last_popped_elem: None,
         }
     }
@@ -57,6 +57,7 @@ impl VirtualMachine {
             instructions: bytecode.instructions,
         };
         let main_frame = Frame::new(&main_function);
+        self.frames = Vec::with_capacity(FRAMES_SIZE);
         self.frames.push(main_frame);
         self.constants = bytecode.constants;
 
