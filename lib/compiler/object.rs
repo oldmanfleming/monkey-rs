@@ -4,6 +4,8 @@ use std::{
     hash::{Hash, Hasher},
 };
 
+use anyhow::Result;
+
 use super::code::Instructions;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -19,6 +21,7 @@ pub enum Object {
         num_locals: usize,
         num_parameters: usize,
     },
+    BuiltInFunction(fn(Vec<Object>) -> Result<Object>),
 }
 
 impl Object {
@@ -62,6 +65,9 @@ impl fmt::Display for Object {
             }
             Object::CompiledFunction { .. } => {
                 write!(f, "fn(){{...}}")
+            }
+            Object::BuiltInFunction(function) => {
+                write!(f, "builtin function {:?}", function)
             }
         }
     }

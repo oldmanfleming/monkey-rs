@@ -4,6 +4,7 @@ use std::collections::HashMap;
 pub enum SymbolScope {
     GlobalScope,
     LocalScope,
+    BuiltinScope,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -61,6 +62,18 @@ impl SymbolTable {
                 None => None,
             },
         }
+    }
+
+    pub fn define_builtin(&mut self, index: usize, name: String) -> Symbol {
+        let symbol = Symbol {
+            name: name.clone(),
+            index,
+            scope: SymbolScope::BuiltinScope,
+        };
+
+        self.store.insert(name, symbol.clone());
+
+        symbol
     }
 }
 
@@ -167,6 +180,44 @@ mod tests {
             ("e", SymbolScope::LocalScope, 0),
             ("f", SymbolScope::LocalScope, 1),
         ];
+
+        for (name, expected_scope, expected_index) in tests.iter() {
+            let symbol = second_local.resolve(name);
+            assert_eq!(symbol.unwrap().scope, *expected_scope);
+            assert_eq!(symbol.unwrap().index, *expected_index);
+        }
+    }
+
+    #[test]
+    fn test_define_resolve_builtins() {
+        let mut global = SymbolTable::new();
+
+        let tests = vec![
+            ("a", SymbolScope::BuiltinScope, 0),
+            ("c", SymbolScope::BuiltinScope, 1),
+            ("e", SymbolScope::BuiltinScope, 2),
+            ("f", SymbolScope::BuiltinScope, 3),
+        ];
+
+        for (index, (name, ..)) in tests.iter().enumerate() {
+            global.define_builtin(index, name.to_string());
+        }
+
+        for (name, expected_scope, expected_index) in tests.iter() {
+            let symbol = global.resolve(name);
+            assert_eq!(symbol.unwrap().scope, *expected_scope);
+            assert_eq!(symbol.unwrap().index, *expected_index);
+        }
+
+        let first_local = SymbolTable::new_enclosed(global);
+
+        for (name, expected_scope, expected_index) in tests.iter() {
+            let symbol = first_local.resolve(name);
+            assert_eq!(symbol.unwrap().scope, *expected_scope);
+            assert_eq!(symbol.unwrap().index, *expected_index);
+        }
+
+        let second_local = SymbolTable::new_enclosed(first_local);
 
         for (name, expected_scope, expected_index) in tests.iter() {
             let symbol = second_local.resolve(name);

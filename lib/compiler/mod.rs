@@ -1,3 +1,4 @@
+mod builtins;
 mod code;
 mod compiler;
 mod object;

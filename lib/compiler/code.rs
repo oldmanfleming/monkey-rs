@@ -133,6 +133,8 @@ pub enum Opcode {
 
     GetLocal,
     SetLocal,
+
+    GetBuiltin,
 }
 
 impl Opcode {
@@ -164,6 +166,7 @@ impl Opcode {
             Opcode::Return => "Return",
             Opcode::GetLocal => "GetLocal",
             Opcode::SetLocal => "SetLocal",
+            Opcode::GetBuiltin => "GetBuiltin",
         }
     }
 
@@ -201,6 +204,7 @@ impl Opcode {
             Opcode::Return => vec![],
             Opcode::GetLocal => vec![1],
             Opcode::SetLocal => vec![1],
+            Opcode::GetBuiltin => vec![1],
         }
     }
 }
@@ -236,6 +240,7 @@ impl TryFrom<u8> for Opcode {
             23 => Opcode::Return,
             24 => Opcode::GetLocal,
             25 => Opcode::SetLocal,
+            26 => Opcode::GetBuiltin,
             _ => bail!("unknown opcode: {}", value),
         };
         Ok(opcode)
@@ -271,6 +276,7 @@ impl From<Opcode> for u8 {
             Opcode::Return => 23,
             Opcode::GetLocal => 24,
             Opcode::SetLocal => 25,
+            Opcode::GetBuiltin => 26,
         }
     }
 }
@@ -320,6 +326,7 @@ mod tests {
             Instructions::make(Opcode::Return, vec![]).unwrap(),
             Instructions::make(Opcode::SetLocal, vec![255]).unwrap(),
             Instructions::make(Opcode::GetLocal, vec![255]).unwrap(),
+            Instructions::make(Opcode::GetBuiltin, vec![1]).unwrap(),
         ]);
 
         let expected = r#"0000 Add
@@ -346,6 +353,7 @@ mod tests {
 0038 Return
 0039 SetLocal 255
 0041 GetLocal 255
+0043 GetBuiltin 1
 "#;
 
         assert_eq!(instructions.to_string(), expected);

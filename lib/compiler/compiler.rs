@@ -6,6 +6,7 @@ use crate::{
 };
 
 use super::{
+    builtins::Builtins,
     code::{Instructions, Opcode},
     object::Object,
     symbol_table::{SymbolScope, SymbolTable},
@@ -44,10 +45,15 @@ impl Scope {
 
 impl Compiler {
     pub fn new() -> Self {
+        let mut symbol_table = SymbolTable::new();
+        for (index, (name, ..)) in Builtins::get().into_iter().enumerate() {
+            symbol_table.define_builtin(index, name);
+        }
+
         Self {
             scopes: vec![Scope::new()],
             scope_index: 0,
-            symbol_table: SymbolTable::new(),
+            symbol_table,
             constants: vec![],
         }
     }
@@ -126,6 +132,7 @@ impl Compiler {
                 let opcode = match symbol.scope {
                     SymbolScope::GlobalScope => Opcode::SetGlobal,
                     SymbolScope::LocalScope => Opcode::SetLocal,
+                    _ => bail!("invalid symbol scope"),
                 };
                 self.emit(opcode, vec![symbol.index])?;
             }
@@ -306,6 +313,7 @@ impl Compiler {
         let opcode = match symbol.scope {
             SymbolScope::GlobalScope => Opcode::GetGlobal,
             SymbolScope::LocalScope => Opcode::GetLocal,
+            SymbolScope::BuiltinScope => Opcode::GetBuiltin,
         };
         self.emit(opcode, vec![symbol.index])?;
         Ok(())
@@ -1196,6 +1204,47 @@ mod tests {
                 ],
                 Instructions::from(vec![
                     Instructions::make(Opcode::Constant, vec![2]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                ]),
+            ),
+        ];
+        for (input, expected_constants, expected_instructions) in tests {
+            run_compiler_tests(input, expected_constants, expected_instructions);
+        }
+    }
+
+    #[test]
+    fn test_builtins() {
+        let tests = vec![
+            (
+                "len([]); push([], 1);",
+                vec![Object::Integer(1)],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::GetBuiltin, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Array, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Call, vec![1]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                    Instructions::make(Opcode::GetBuiltin, vec![5]).unwrap(),
+                    Instructions::make(Opcode::Array, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Call, vec![2]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                ]),
+            ),
+            (
+                "fn() { len([]) }",
+                vec![Object::CompiledFunction {
+                    instructions: Instructions::from(vec![
+                        Instructions::make(Opcode::GetBuiltin, vec![0]).unwrap(),
+                        Instructions::make(Opcode::Array, vec![0]).unwrap(),
+                        Instructions::make(Opcode::Call, vec![1]).unwrap(),
+                        Instructions::make(Opcode::ReturnValue, vec![]).unwrap(),
+                    ]),
+                    num_locals: 0,
+                    num_parameters: 0,
+                }],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::Constant, vec![0]).unwrap(),
                     Instructions::make(Opcode::Pop, vec![]).unwrap(),
                 ]),
             ),

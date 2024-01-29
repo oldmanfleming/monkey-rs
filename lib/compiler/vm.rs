@@ -2,12 +2,18 @@ use std::{collections::HashMap, io::Cursor};
 
 use anyhow::{anyhow, bail, Result};
 use byteorder::ReadBytesExt;
+use lazy_static::lazy_static;
 
 use super::{
+    builtins::Builtins,
     code::{Instructions, Opcode},
     compiler::Bytecode,
     object::Object,
 };
+
+lazy_static! {
+    pub static ref BUILTINS: Vec<(String, Object)> = Builtins::get();
+}
 
 const STACK_SIZE: usize = 2048;
 const GLOBALS_SIZE: usize = 65536;
@@ -164,13 +170,14 @@ impl VirtualMachine {
                         .stack
                         .get(self.stack.len() - 1 - num_args)
                         .ok_or(anyhow!("no function found"))?
+                        .clone()
                     {
                         Object::CompiledFunction {
                             instructions,
                             num_locals,
                             num_parameters,
                         } => {
-                            if num_args != *num_parameters {
+                            if num_args != num_parameters {
                                 bail!(
                                     "wrong number of arguments: want={}, got={}",
                                     num_parameters,
@@ -180,11 +187,20 @@ impl VirtualMachine {
 
                             let num_locals = num_locals.clone() - num_args;
                             // set base_pointer to just beyond the function that is on the stack
-                            let frame = Frame::new(instructions, self.stack.len() - num_args);
+                            let frame = Frame::new(&instructions, self.stack.len() - num_args);
                             self.push_frame(frame);
                             for _ in 0..num_locals {
                                 self.push(NULL);
                             }
+                        }
+                        Object::BuiltInFunction(function) => {
+                            let mut args = vec![];
+                            for _ in 0..num_args {
+                                args.push(self.pop()?);
+                            }
+                            args.reverse();
+                            let result = function(args)?;
+                            self.push(result);
                         }
                         object => bail!("calling non-function: {:?}", object),
                     }
@@ -213,6 +229,11 @@ impl VirtualMachine {
                     let local = frame.base_pointer + local_index;
                     let value = self.stack[local].clone();
                     self.push(value);
+                }
+                Opcode::GetBuiltin => {
+                    let builtin_index = self.current_instructions()?.read_u8()? as usize;
+                    let (_, builtin) = BUILTINS[builtin_index].clone();
+                    self.push(builtin);
                 }
                 _ => bail!("unknown opcode: {:?}", opcode),
             }
@@ -718,6 +739,67 @@ mod tests {
             (
                 "fn(a, b) { a + b; }(1);",
                 String::from("wrong number of arguments: want=2, got=1"),
+            ),
+        ];
+
+        for (input, expected) in tests {
+            match run_vm_tests_with_result(input) {
+                Ok(_) => panic!("expected error but got result"),
+                Err(err) => assert_eq!(err.to_string(), expected.to_string()),
+            }
+        }
+    }
+
+    #[test]
+    fn test_builtin_functions_succeed() {
+        let tests = vec![
+            ("len(\"\")", Object::Integer(0)),
+            ("len(\"four\")", Object::Integer(4)),
+            ("len(\"hello world\")", Object::Integer(11)),
+            ("len([1, 2, 3])", Object::Integer(3)),
+            ("len([])", Object::Integer(0)),
+            ("print(\"hello\", \"world!\")", Object::Null),
+            ("first([1, 2, 3])", Object::Integer(1)),
+            ("first([])", Object::Null),
+            ("last([1, 2, 3])", Object::Integer(3)),
+            ("last([])", Object::Null),
+            (
+                "rest([1, 2, 3])",
+                Object::Array(vec![Object::Integer(2), Object::Integer(3)]),
+            ),
+            ("rest([])", Object::Null),
+            ("push([], 1)", Object::Array(vec![Object::Integer(1)])),
+        ];
+
+        for (input, expected) in tests {
+            run_vm_tests(input, expected);
+        }
+    }
+
+    #[test]
+    fn test_builtin_functions_fail() {
+        let tests = vec![
+            (
+                "len(1)",
+                String::from("argument to `len` not supported, got 1"),
+            ),
+            (
+                "len(\"one\", \"two\")",
+                String::from("wrong number of arguments: want=1, got=2"),
+            ),
+            (
+                "first(1)",
+                String::from("argument to `first` not supported, got 1"),
+            ),
+            (
+                "last(1)",
+                String::from("argument to `last` not supported, got 1"),
+            ),
+            (
+                "push(1, 1)",
+                String::from(
+                    "argument to `push` not supported, got Some(Integer(1)) and Some(Integer(1))",
+                ),
             ),
         ];
 
