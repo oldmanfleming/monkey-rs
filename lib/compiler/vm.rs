@@ -1,4 +1,3 @@
-use core::num;
 use std::{collections::HashMap, io::Cursor};
 
 use anyhow::{anyhow, bail, Result};
@@ -240,6 +239,7 @@ impl VirtualMachine {
                             }
                             args.reverse();
                             let result = function(args)?;
+                            self.pop()?;
                             self.push(result);
                         }
                         Object::Closure { function, free } => {
@@ -952,6 +952,54 @@ mod tests {
         for (input, expected) in tests {
             run_vm_tests(input, expected);
         }
+    }
+
+    #[test]
+    fn test_map() {
+        let input = r#"
+            let map = fn(arr, f) {
+                let iter = fn(arr, accumulated) {
+                    if (len(arr) == 0) {
+                        accumulated
+                    } else {
+                        iter(rest(arr), push(accumulated, f(first(arr))));
+                    }
+                };
+                iter(arr, []);
+            };
+            
+            let a = [1, 2, 3, 4];
+            let double = fn(x) { x * 2 };
+            map(a, double);
+        "#;
+        run_vm_tests(
+            input,
+            Object::Array(vec![
+                Object::Integer(2),
+                Object::Integer(4),
+                Object::Integer(6),
+                Object::Integer(8),
+            ]),
+        );
+    }
+
+    #[test]
+    fn test_fibonacci() {
+        let input = r#"
+            let fibonacci = fn(x) {
+                if (x == 0) {
+                    0
+                } else {
+                    if (x == 1) {
+                        1
+                    } else {
+                        fibonacci(x - 1) + fibonacci(x - 2);
+                    }
+                }
+            };
+            fibonacci(15);
+        "#;
+        run_vm_tests(input, Object::Integer(610));
     }
 
     fn run_vm_tests_with_result(input: &str) -> Result<Object> {
