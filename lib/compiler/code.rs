@@ -4,7 +4,7 @@ use anyhow::{bail, Context, Result};
 use byteorder::{ReadBytesExt, WriteBytesExt};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Instructions(Vec<u8>);
+pub struct Instructions(pub Vec<u8>);
 
 impl Instructions {
     pub fn new() -> Self {
@@ -135,6 +135,10 @@ pub enum Opcode {
     SetLocal,
 
     GetBuiltin,
+
+    Closure,
+    GetFree,
+    CurrentClosure,
 }
 
 impl Opcode {
@@ -167,6 +171,9 @@ impl Opcode {
             Opcode::GetLocal => "GetLocal",
             Opcode::SetLocal => "SetLocal",
             Opcode::GetBuiltin => "GetBuiltin",
+            Opcode::Closure => "Closure",
+            Opcode::GetFree => "GetFree",
+            Opcode::CurrentClosure => "CurrentClosure",
         }
     }
 
@@ -205,6 +212,9 @@ impl Opcode {
             Opcode::GetLocal => vec![1],
             Opcode::SetLocal => vec![1],
             Opcode::GetBuiltin => vec![1],
+            Opcode::Closure => vec![2, 1],
+            Opcode::GetFree => vec![1],
+            Opcode::CurrentClosure => vec![],
         }
     }
 }
@@ -241,6 +251,9 @@ impl TryFrom<u8> for Opcode {
             24 => Opcode::GetLocal,
             25 => Opcode::SetLocal,
             26 => Opcode::GetBuiltin,
+            27 => Opcode::Closure,
+            28 => Opcode::GetFree,
+            29 => Opcode::CurrentClosure,
             _ => bail!("unknown opcode: {}", value),
         };
         Ok(opcode)
@@ -277,6 +290,9 @@ impl From<Opcode> for u8 {
             Opcode::GetLocal => 24,
             Opcode::SetLocal => 25,
             Opcode::GetBuiltin => 26,
+            Opcode::Closure => 27,
+            Opcode::GetFree => 28,
+            Opcode::CurrentClosure => 29,
         }
     }
 }
@@ -327,6 +343,9 @@ mod tests {
             Instructions::make(Opcode::SetLocal, vec![255]).unwrap(),
             Instructions::make(Opcode::GetLocal, vec![255]).unwrap(),
             Instructions::make(Opcode::GetBuiltin, vec![1]).unwrap(),
+            Instructions::make(Opcode::Closure, vec![65535, 255]).unwrap(),
+            Instructions::make(Opcode::GetFree, vec![255]).unwrap(),
+            Instructions::make(Opcode::CurrentClosure, vec![]).unwrap(),
         ]);
 
         let expected = r#"0000 Add
@@ -354,6 +373,9 @@ mod tests {
 0039 SetLocal 255
 0041 GetLocal 255
 0043 GetBuiltin 1
+0045 Closure 65535 255
+0049 GetFree 255
+0051 CurrentClosure
 "#;
 
         assert_eq!(instructions.to_string(), expected);

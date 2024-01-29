@@ -5,11 +5,13 @@ pub enum SymbolScope {
     GlobalScope,
     LocalScope,
     BuiltinScope,
+    FreeScope,
+    FunctionScope,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Symbol {
-    name: String,
+    pub name: String,
     pub scope: SymbolScope,
     pub index: usize,
 }
@@ -19,6 +21,7 @@ pub struct SymbolTable {
     pub outer: Option<Box<SymbolTable>>,
     store: HashMap<String, Symbol>,
     pub num_definitions: usize,
+    pub free_symbols: Vec<Symbol>,
 }
 
 impl SymbolTable {
@@ -27,6 +30,7 @@ impl SymbolTable {
             outer: None,
             store: HashMap::new(),
             num_definitions: 0,
+            free_symbols: Vec::new(),
         }
     }
 
@@ -35,6 +39,7 @@ impl SymbolTable {
             outer: Some(Box::new(outer)),
             store: HashMap::new(),
             num_definitions: 0,
+            free_symbols: Vec::new(),
         }
     }
 
@@ -54,11 +59,35 @@ impl SymbolTable {
         symbol
     }
 
-    pub fn resolve(&self, name: &str) -> Option<&Symbol> {
+    fn define_free(&mut self, original: &Symbol) -> Symbol {
+        self.free_symbols.push(original.clone());
+        let symbol = Symbol {
+            name: original.name.clone(),
+            index: self.free_symbols.len() - 1,
+            scope: SymbolScope::FreeScope,
+        };
+
+        self.store.insert(original.name.clone(), symbol.clone());
+        symbol
+    }
+
+    pub fn resolve(&mut self, name: &str) -> Option<Symbol> {
         match self.store.get(name) {
-            Some(symbol) => Some(symbol),
-            None => match &self.outer {
-                Some(outer) => outer.resolve(name),
+            Some(symbol) => Some(symbol.clone()),
+            None => match &mut self.outer {
+                Some(outer) => match outer.resolve(name) {
+                    Some(symbol) => {
+                        if symbol.scope == SymbolScope::GlobalScope
+                            || symbol.scope == SymbolScope::BuiltinScope
+                        {
+                            Some(symbol)
+                        } else {
+                            let free = self.define_free(&symbol);
+                            Some(free)
+                        }
+                    }
+                    None => None,
+                },
                 None => None,
             },
         }
@@ -69,6 +98,18 @@ impl SymbolTable {
             name: name.clone(),
             index,
             scope: SymbolScope::BuiltinScope,
+        };
+
+        self.store.insert(name, symbol.clone());
+
+        symbol
+    }
+
+    pub fn define_function_name(&mut self, name: String) -> Symbol {
+        let symbol = Symbol {
+            name: name.clone(),
+            index: 0,
+            scope: SymbolScope::FunctionScope,
         };
 
         self.store.insert(name, symbol.clone());
@@ -141,9 +182,9 @@ mod tests {
         ];
 
         for (name, expected_scope, expected_index) in tests.iter() {
-            let symbol = local.resolve(name);
-            assert_eq!(symbol.unwrap().scope, *expected_scope);
-            assert_eq!(symbol.unwrap().index, *expected_index);
+            let symbol = local.resolve(name).unwrap();
+            assert_eq!(symbol.scope, *expected_scope);
+            assert_eq!(symbol.index, *expected_index);
         }
     }
 
@@ -165,9 +206,9 @@ mod tests {
         ];
 
         for (name, expected_scope, expected_index) in tests.iter() {
-            let symbol = first_local.resolve(name);
-            assert_eq!(symbol.unwrap().scope, *expected_scope);
-            assert_eq!(symbol.unwrap().index, *expected_index);
+            let symbol = first_local.resolve(name).unwrap();
+            assert_eq!(symbol.scope, *expected_scope);
+            assert_eq!(symbol.index, *expected_index);
         }
 
         let mut second_local = SymbolTable::new_enclosed(first_local);
@@ -182,9 +223,9 @@ mod tests {
         ];
 
         for (name, expected_scope, expected_index) in tests.iter() {
-            let symbol = second_local.resolve(name);
-            assert_eq!(symbol.unwrap().scope, *expected_scope);
-            assert_eq!(symbol.unwrap().index, *expected_index);
+            let symbol = second_local.resolve(name).unwrap();
+            assert_eq!(symbol.scope, *expected_scope);
+            assert_eq!(symbol.index, *expected_index);
         }
     }
 
@@ -204,25 +245,137 @@ mod tests {
         }
 
         for (name, expected_scope, expected_index) in tests.iter() {
-            let symbol = global.resolve(name);
-            assert_eq!(symbol.unwrap().scope, *expected_scope);
-            assert_eq!(symbol.unwrap().index, *expected_index);
+            let symbol = global.resolve(name).unwrap();
+            assert_eq!(symbol.scope, *expected_scope);
+            assert_eq!(symbol.index, *expected_index);
         }
 
-        let first_local = SymbolTable::new_enclosed(global);
+        let mut first_local = SymbolTable::new_enclosed(global);
 
         for (name, expected_scope, expected_index) in tests.iter() {
-            let symbol = first_local.resolve(name);
-            assert_eq!(symbol.unwrap().scope, *expected_scope);
-            assert_eq!(symbol.unwrap().index, *expected_index);
+            let symbol = first_local.resolve(name).unwrap();
+            assert_eq!(symbol.scope, *expected_scope);
+            assert_eq!(symbol.index, *expected_index);
         }
 
-        let second_local = SymbolTable::new_enclosed(first_local);
+        let mut second_local = SymbolTable::new_enclosed(first_local);
 
         for (name, expected_scope, expected_index) in tests.iter() {
+            let symbol = second_local.resolve(name).unwrap();
+            assert_eq!(symbol.scope, *expected_scope);
+            assert_eq!(symbol.index, *expected_index);
+        }
+    }
+
+    #[test]
+    fn test_resolve_free() {
+        let mut global = SymbolTable::new();
+        global.define("a".to_string());
+        global.define("b".to_string());
+
+        let mut first_local = SymbolTable::new_enclosed(global);
+        first_local.define("c".to_string());
+        first_local.define("d".to_string());
+
+        let tests = vec![
+            ("a", SymbolScope::GlobalScope, 0),
+            ("b", SymbolScope::GlobalScope, 1),
+            ("c", SymbolScope::LocalScope, 0),
+            ("d", SymbolScope::LocalScope, 1),
+        ];
+
+        assert_eq!(first_local.free_symbols.len(), 0);
+        for (name, expected_scope, expected_index) in tests.iter() {
+            let symbol = first_local.resolve(name).unwrap();
+            assert_eq!(symbol.scope, *expected_scope);
+            assert_eq!(symbol.index, *expected_index);
+        }
+
+        let mut second_local = SymbolTable::new_enclosed(first_local);
+        second_local.define("e".to_string());
+        second_local.define("f".to_string());
+
+        let tests = vec![
+            ("a", SymbolScope::GlobalScope, 0),
+            ("b", SymbolScope::GlobalScope, 1),
+            ("c", SymbolScope::FreeScope, 0),
+            ("d", SymbolScope::FreeScope, 1),
+            ("e", SymbolScope::LocalScope, 0),
+            ("f", SymbolScope::LocalScope, 1),
+        ];
+
+        for (name, expected_scope, expected_index) in tests.iter() {
+            let symbol = second_local.resolve(name).unwrap();
+            assert_eq!(symbol.scope, *expected_scope);
+            assert_eq!(symbol.index, *expected_index);
+        }
+        assert_eq!(second_local.free_symbols.len(), 2);
+        assert_eq!(second_local.free_symbols[0].scope, SymbolScope::LocalScope);
+        assert_eq!(second_local.free_symbols[0].index, 0);
+        assert_eq!(second_local.free_symbols[0].name, "c");
+        assert_eq!(second_local.free_symbols[1].scope, SymbolScope::LocalScope);
+        assert_eq!(second_local.free_symbols[1].index, 1);
+        assert_eq!(second_local.free_symbols[1].name, "d");
+    }
+
+    #[test]
+    fn test_resolve_unresolvable_free() {
+        let mut global = SymbolTable::new();
+        global.define("a".to_string());
+
+        let mut first_local = SymbolTable::new_enclosed(global);
+        first_local.define("c".to_string());
+
+        let mut second_local = SymbolTable::new_enclosed(first_local);
+        second_local.define("e".to_string());
+        second_local.define("f".to_string());
+
+        let tests = vec![
+            ("a", SymbolScope::GlobalScope, 0),
+            ("c", SymbolScope::FreeScope, 0),
+            ("e", SymbolScope::LocalScope, 0),
+            ("f", SymbolScope::LocalScope, 1),
+        ];
+
+        for (name, expected_scope, expected_index) in tests.iter() {
+            let symbol = second_local.resolve(name).unwrap();
+            assert_eq!(symbol.scope, *expected_scope);
+            assert_eq!(symbol.index, *expected_index);
+        }
+
+        let tests = vec!["b", "d"];
+        for name in tests.iter() {
             let symbol = second_local.resolve(name);
-            assert_eq!(symbol.unwrap().scope, *expected_scope);
-            assert_eq!(symbol.unwrap().index, *expected_index);
+            assert_eq!(symbol, None);
+        }
+    }
+
+    #[test]
+    fn define_and_resolve_function_name() {
+        let mut global = SymbolTable::new();
+        global.define_function_name("a".to_string());
+
+        let tests = vec![("a", SymbolScope::FunctionScope, 0)];
+
+        for (name, expected_scope, expected_index) in tests.iter() {
+            let symbol = global.resolve(name).unwrap();
+            assert_eq!(symbol.scope, *expected_scope);
+            assert_eq!(symbol.index, *expected_index);
+        }
+    }
+
+    #[test]
+    fn define_shadowing_function_name() {
+        let mut global = SymbolTable::new();
+        global.define_function_name("a".to_string());
+        global.define("a".to_string());
+
+        let tests = vec![("a", SymbolScope::GlobalScope, 0)];
+
+        for (name, expected_scope, expected_index) in tests.iter() {
+            let symbol = global.resolve(name).unwrap();
+            assert_eq!(symbol.scope, *expected_scope);
+            assert_eq!(symbol.index, *expected_index);
         }
     }
 }

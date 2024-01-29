@@ -99,9 +99,11 @@ impl Evaluator {
                 alternative,
             } => self.eval_if_expression(condition, consequence, alternative)?,
             Expression::Identifier(name) => self.eval_identifier_expression(name)?,
-            Expression::FunctionLiteral { parameters, body } => {
-                self.eval_function_literal(parameters, body)?
-            }
+            Expression::FunctionLiteral {
+                name: _,
+                parameters,
+                body,
+            } => self.eval_function_literal(parameters, body)?,
             Expression::Call {
                 function,
                 arguments,

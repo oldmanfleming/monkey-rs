@@ -102,12 +102,12 @@ impl Parser {
     }
 
     fn parse_let_statement(&mut self) -> Result<Statement> {
-        let name = match self
+        let (name, name_raw) = match self
             .next_token()
             .cur_token()
             .ok_or(anyhow!("no token found"))?
         {
-            Token::Ident(value) => Expression::Identifier(value),
+            Token::Ident(value) => (Expression::Identifier(value.clone()), value),
             token => bail!("expected identifier, found {token}"),
         };
 
@@ -115,7 +115,12 @@ impl Parser {
 
         self.next_token();
 
-        let value = self.parse_expression(Precedence::Lowest)?;
+        let mut value = self.parse_expression(Precedence::Lowest)?;
+
+        match &mut value {
+            Expression::FunctionLiteral { name, .. } => *name = Some(name_raw),
+            _ => {}
+        }
 
         if self
             .peek_token()
@@ -331,6 +336,7 @@ impl Parser {
         let body = self.parse_block_statement()?;
 
         Ok(Expression::FunctionLiteral {
+            name: None,
             parameters,
             body: Box::new(body),
         })
@@ -589,7 +595,11 @@ mod tests {
                     _ => panic!("expected call expression, found {expr}"),
                 }
                 match &values[5] {
-                    Expression::FunctionLiteral { parameters, body } => {
+                    Expression::FunctionLiteral {
+                        name: _,
+                        parameters,
+                        body,
+                    } => {
                         assert_eq!(parameters.len(), 2);
                         assert_identifier_expression(&parameters[0], "x");
                         assert_identifier_expression(&parameters[1], "y");
@@ -1068,6 +1078,37 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_function_literal_with_name() {
+        let program = get_program("let myFunction = fn() {};");
+        assert_eq!(program.statements.len(), 1);
+        let statement = program.statements.first().unwrap();
+        let (name, value) = match statement {
+            Statement::Let { name, value } => (name, value),
+            _ => panic!("expected let statement, found {statement}"),
+        };
+
+        match name {
+            Expression::Identifier(value) => {
+                assert_eq!(*value, "myFunction".to_string())
+            }
+            _ => panic!("expected identifier, found {name}"),
+        }
+
+        match value {
+            Expression::FunctionLiteral {
+                name,
+                parameters,
+                body,
+            } => {
+                assert_eq!(*name.as_deref().unwrap(), "myFunction".to_string());
+                assert_eq!(parameters.len(), 0);
+                assert_eq!(body.deref(), &Statement::Block(vec![]));
+            }
+            _ => panic!("expected function literal, found {value}"),
+        }
+    }
+
     fn get_program(input: &str) -> Program {
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
@@ -1083,7 +1124,11 @@ mod tests {
         expected_body: Statement,
     ) {
         match expression {
-            Expression::FunctionLiteral { parameters, body } => {
+            Expression::FunctionLiteral {
+                name: _,
+                parameters,
+                body,
+            } => {
                 assert_eq!(parameters, &expected_parameters);
                 assert_eq!(body.deref(), &expected_body);
             }

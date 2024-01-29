@@ -22,6 +22,10 @@ pub enum Object {
         num_parameters: usize,
     },
     BuiltInFunction(fn(Vec<Object>) -> Result<Object>),
+    Closure {
+        function: Box<Object>,
+        free: Vec<Object>,
+    },
 }
 
 impl Object {
@@ -68,6 +72,9 @@ impl fmt::Display for Object {
             }
             Object::BuiltInFunction(function) => {
                 write!(f, "builtin function {:?}", function)
+            }
+            Object::Closure { function, .. } => {
+                write!(f, "closure({})", function)
             }
         }
     }

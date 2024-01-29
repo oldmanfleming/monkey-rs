@@ -1,3 +1,4 @@
+use core::num;
 use std::{collections::HashMap, io::Cursor};
 
 use anyhow::{anyhow, bail, Result};
@@ -27,13 +28,25 @@ const FALSE: Object = Object::Boolean(false);
 struct Frame {
     instructions: Cursor<Vec<u8>>,
     base_pointer: usize,
+    free: Vec<Object>,
+    num_locals: usize,
+    num_params: usize,
 }
 
 impl Frame {
-    fn new(instructions: &Instructions, base_pointer: usize) -> Self {
+    fn new(
+        instructions: &Instructions,
+        base_pointer: usize,
+        free: Vec<Object>,
+        num_locals: usize,
+        num_params: usize,
+    ) -> Self {
         Self {
             instructions: Cursor::new(instructions.inner().clone()),
             base_pointer,
+            free,
+            num_locals,
+            num_params,
         }
     }
 
@@ -63,7 +76,7 @@ impl VirtualMachine {
     }
 
     pub fn run(&mut self, bytecode: Bytecode) -> Result<Object> {
-        let main_frame = Frame::new(&bytecode.instructions, 0);
+        let main_frame = Frame::new(&bytecode.instructions, 0, vec![], 0, 0);
         self.frames = Vec::with_capacity(FRAMES_SIZE);
         self.frames.push(main_frame);
         self.constants = bytecode.constants;
@@ -163,6 +176,27 @@ impl VirtualMachine {
                     let left = self.pop()?;
                     self.execute_index_expression(left, index)?;
                 }
+                Opcode::Closure => {
+                    let constant_index =
+                        self.current_instructions()?
+                            .read_u16::<byteorder::BigEndian>()? as usize;
+                    let num_free = self.current_instructions()?.read_u8()? as usize;
+                    let compiled_function = self.constants[constant_index].clone();
+                    match compiled_function {
+                        Object::CompiledFunction { .. } => (),
+                        _ => bail!("expected compiled function"),
+                    };
+                    let mut free = Vec::with_capacity(num_free);
+                    for _ in 0..num_free {
+                        free.push(self.pop()?);
+                    }
+                    free.reverse();
+                    let closure = Object::Closure {
+                        function: Box::new(compiled_function),
+                        free,
+                    };
+                    self.push(closure);
+                }
                 Opcode::Call => {
                     let num_args = self.current_instructions()?.read_u8()? as usize;
                     // We don't pop from the stack here, poping the function will be the job of the return opcodes
@@ -185,11 +219,17 @@ impl VirtualMachine {
                                 );
                             }
 
-                            let num_locals = num_locals.clone() - num_args;
+                            let num = num_locals.clone() - num_args;
                             // set base_pointer to just beyond the function that is on the stack
-                            let frame = Frame::new(&instructions, self.stack.len() - num_args);
+                            let frame = Frame::new(
+                                &instructions,
+                                self.stack.len() - num_args,
+                                vec![],
+                                num_locals,
+                                num_args,
+                            );
                             self.push_frame(frame);
-                            for _ in 0..num_locals {
+                            for _ in 0..num {
                                 self.push(NULL);
                             }
                         }
@@ -201,6 +241,37 @@ impl VirtualMachine {
                             args.reverse();
                             let result = function(args)?;
                             self.push(result);
+                        }
+                        Object::Closure { function, free } => {
+                            let (instructions, num_locals) = match *function {
+                                Object::CompiledFunction {
+                                    instructions,
+                                    num_locals,
+                                    num_parameters,
+                                } => {
+                                    if num_args != num_parameters {
+                                        bail!(
+                                            "wrong number of arguments: want={}, got={}",
+                                            num_parameters,
+                                            num_args
+                                        );
+                                    }
+                                    (instructions, num_locals)
+                                }
+                                _ => bail!("expected compiled function"),
+                            };
+                            let num = num_locals.clone() - num_args;
+                            let frame = Frame::new(
+                                &instructions,
+                                self.stack.len() - num_args,
+                                free,
+                                num_locals,
+                                num_args,
+                            );
+                            self.push_frame(frame);
+                            for _ in 0..num {
+                                self.push(NULL);
+                            }
                         }
                         object => bail!("calling non-function: {:?}", object),
                     }
@@ -235,7 +306,27 @@ impl VirtualMachine {
                     let (_, builtin) = BUILTINS[builtin_index].clone();
                     self.push(builtin);
                 }
-                _ => bail!("unknown opcode: {:?}", opcode),
+                Opcode::GetFree => {
+                    let free_index = self.current_instructions()?.read_u8()? as usize;
+                    let current_frame = self.frames.last().ok_or(anyhow!("no frame found"))?;
+                    let free = current_frame.free[free_index].clone();
+                    self.push(free);
+                }
+                Opcode::CurrentClosure => {
+                    let current_frame = self.frames.last().ok_or(anyhow!("no frame found"))?;
+                    let closure = Object::Closure {
+                        function: Box::new(Object::CompiledFunction {
+                            instructions: Instructions(
+                                current_frame.instructions.get_ref().clone(),
+                            ),
+                            num_locals: current_frame.num_locals,
+                            num_parameters: current_frame.num_params,
+                        }),
+                        free: current_frame.free.clone(),
+                    };
+
+                    self.push(closure);
+                }
             }
         }
 
@@ -808,6 +899,58 @@ mod tests {
                 Ok(_) => panic!("expected error but got result"),
                 Err(err) => assert_eq!(err.to_string(), expected.to_string()),
             }
+        }
+    }
+
+    #[test]
+    fn test_closures() {
+        let tests = vec![
+            (
+                "let newClosure = fn(a) { fn() { a; }; }; let closure = newClosure(99); closure();",
+                Object::Integer(99),
+            ),
+            (
+                "let newAdder = fn(a, b) { fn(c) { a + b + c }; }; let adder = newAdder(1, 2); adder(8);",
+                Object::Integer(11),
+            ),
+            (
+                "let newAdder = fn(a, b) { let c = a + b; fn(d) { c + d }; }; let adder = newAdder(1, 2); adder(8);",
+                Object::Integer(11),
+            ),
+            (
+                "let newAdderOuter = fn(a, b) { let c = a + b; fn(d) { let e = d + c; fn(f) { e + f; }; }; }; let newAdderInner = newAdderOuter(1, 2); let adder = newAdderInner(3); adder(8);",
+                Object::Integer(14),
+            ),
+            (
+                "let a = 1; let newAdderOuter = fn(b) { fn(c) { fn(d) { a + b + c + d }; }; }; let newAdderInner = newAdderOuter(2); let adder = newAdderInner(3); adder(8);",
+                Object::Integer(14),
+            ),
+            (
+                "let newClosure = fn(a, b) { let one = fn() { a; }; let two = fn() { b; }; fn() { one() + two(); }; }; let closure = newClosure(9, 90); closure();",
+                Object::Integer(99),
+            ),
+        ];
+
+        for (input, expected) in tests {
+            run_vm_tests(input, expected);
+        }
+    }
+
+    #[test]
+    fn test_recursive_closures() {
+        let tests = vec![
+            (
+                "let countDown = fn(x) { if (x == 0) { return 0; } else { countDown(x - 1); } }; countDown(1);",
+                Object::Integer(0),
+            ),
+            (
+                "let wrapper = fn() { let countDown = fn(x) { if (x == 0) { return 0; } else { countDown(x - 1); } }; countDown(1); }; wrapper();",
+                Object::Integer(0),
+            ),
+        ];
+
+        for (input, expected) in tests {
+            run_vm_tests(input, expected);
         }
     }
 

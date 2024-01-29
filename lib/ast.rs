@@ -62,6 +62,7 @@ pub enum Expression {
         alternative: Option<Box<Statement>>,
     },
     FunctionLiteral {
+        name: Option<String>,
         parameters: Vec<Expression>,
         body: Box<Statement>,
     },
@@ -115,7 +116,11 @@ impl fmt::Display for Expression {
                 }
                 Ok(())
             }
-            Expression::FunctionLiteral { parameters, body } => {
+            Expression::FunctionLiteral {
+                name: _,
+                parameters,
+                body,
+            } => {
                 let params = parameters
                     .iter()
                     .map(|p| format!("{}", p))
