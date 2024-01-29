@@ -196,7 +196,7 @@ impl Opcode {
             Opcode::Array => vec![2],
             Opcode::Hash => vec![2],
             Opcode::Index => vec![],
-            Opcode::Call => vec![],
+            Opcode::Call => vec![1],
             Opcode::ReturnValue => vec![],
             Opcode::Return => vec![],
             Opcode::GetLocal => vec![1],
@@ -315,7 +315,7 @@ mod tests {
             Instructions::make(Opcode::Array, vec![0]).unwrap(),
             Instructions::make(Opcode::Hash, vec![0]).unwrap(),
             Instructions::make(Opcode::Index, vec![]).unwrap(),
-            Instructions::make(Opcode::Call, vec![]).unwrap(),
+            Instructions::make(Opcode::Call, vec![255]).unwrap(),
             Instructions::make(Opcode::ReturnValue, vec![]).unwrap(),
             Instructions::make(Opcode::Return, vec![]).unwrap(),
             Instructions::make(Opcode::SetLocal, vec![255]).unwrap(),
@@ -341,11 +341,11 @@ mod tests {
 0028 Array 0
 0031 Hash 0
 0034 Index
-0035 Call
-0036 ReturnValue
-0037 Return
-0038 SetLocal 255
-0040 GetLocal 255
+0035 Call 255
+0037 ReturnValue
+0038 Return
+0039 SetLocal 255
+0041 GetLocal 255
 "#;
 
         assert_eq!(instructions.to_string(), expected);

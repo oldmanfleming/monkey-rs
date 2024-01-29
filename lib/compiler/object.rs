@@ -17,6 +17,7 @@ pub enum Object {
     CompiledFunction {
         instructions: Instructions,
         num_locals: usize,
+        num_parameters: usize,
     },
 }
 

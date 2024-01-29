@@ -195,34 +195,35 @@ impl Compiler {
     fn compile_call_expression(
         &mut self,
         function: Box<Expression>,
-        _arguments: Vec<Expression>,
+        arguments: Vec<Expression>,
     ) -> Result<()> {
         self.compile_expression(*function)?;
 
-        // for argument in arguments.into_iter() {
-        //     self.compile_expression(argument)?;
-        // }
+        let num_arguments = arguments.len();
+        for argument in arguments.into_iter() {
+            self.compile_expression(argument)?;
+        }
 
-        // self.emit(Opcode::Call, vec![arguments.len()])?;
-        self.emit(Opcode::Call, vec![])?;
+        self.emit(Opcode::Call, vec![num_arguments])?;
 
         Ok(())
     }
 
     fn compile_function_literal(
         &mut self,
-        _parameters: Vec<Expression>,
+        parameters: Vec<Expression>,
         body: Box<Statement>,
     ) -> Result<()> {
         self.enter_scope();
 
-        // for param in parameters.into_iter() {
-        //     let name = match param {
-        //         Expression::Identifier(name) => name,
-        //         _ => bail!("expected identifier, got {:?}", param),
-        //     };
-        //     self.symbol_table.define(name);
-        // }
+        let num_parameters = parameters.len();
+        for param in parameters.into_iter() {
+            let name = match param {
+                Expression::Identifier(name) => name,
+                _ => bail!("expected identifier, got {:?}", param),
+            };
+            self.symbol_table.define(name);
+        }
 
         self.compile_statement(*body)?;
 
@@ -251,12 +252,10 @@ impl Compiler {
 
         let instructions = self.leave_scope()?;
 
-        // let num_locals = self.symbol_table.num_definitions;
-        // let num_params = parameters.len();
-
         let compiled_fn = Object::CompiledFunction {
             instructions,
             num_locals,
+            num_parameters,
             // instructions: Instructions::with_state(instructions, num_locals, num_params),
         };
 
@@ -958,6 +957,7 @@ mod tests {
                             Instructions::make(Opcode::ReturnValue, vec![]).unwrap(),
                         ]),
                         num_locals: 0,
+                        num_parameters: 0,
                     },
                 ],
                 Instructions::from(vec![
@@ -978,6 +978,7 @@ mod tests {
                             Instructions::make(Opcode::ReturnValue, vec![]).unwrap(),
                         ]),
                         num_locals: 0,
+                        num_parameters: 0,
                     },
                 ],
                 Instructions::from(vec![
@@ -998,6 +999,7 @@ mod tests {
                             Instructions::make(Opcode::ReturnValue, vec![]).unwrap(),
                         ]),
                         num_locals: 0,
+                        num_parameters: 0,
                     },
                 ],
                 Instructions::from(vec![
@@ -1014,6 +1016,7 @@ mod tests {
                     )
                     .unwrap()]),
                     num_locals: 0,
+                    num_parameters: 0,
                 }],
                 Instructions::from(vec![
                     Instructions::make(Opcode::Constant, vec![0]).unwrap(),
@@ -1040,12 +1043,12 @@ mod tests {
                             Instructions::make(Opcode::ReturnValue, vec![]).unwrap(),
                         ]),
                         num_locals: 0,
+                        num_parameters: 0,
                     },
                 ],
                 Instructions::from(vec![
                     Instructions::make(Opcode::Constant, vec![1]).unwrap(),
-                    Instructions::make(Opcode::Call, vec![]).unwrap(),
-                    // Instructions::make(Opcode::Call, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Call, vec![0]).unwrap(),
                     Instructions::make(Opcode::Pop, vec![]).unwrap(),
                 ]),
             ),
@@ -1059,65 +1062,69 @@ mod tests {
                             Instructions::make(Opcode::ReturnValue, vec![]).unwrap(),
                         ]),
                         num_locals: 0,
+                        num_parameters: 0,
                     },
                 ],
                 Instructions::from(vec![
                     Instructions::make(Opcode::Constant, vec![1]).unwrap(),
                     Instructions::make(Opcode::SetGlobal, vec![0]).unwrap(),
                     Instructions::make(Opcode::GetGlobal, vec![0]).unwrap(),
-                    Instructions::make(Opcode::Call, vec![]).unwrap(),
-                    // Instructions::make(Opcode::Call, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Call, vec![0]).unwrap(),
                     Instructions::make(Opcode::Pop, vec![]).unwrap(),
                 ]),
             ),
-            //     (
-            //         "let oneArg = fn(a) { a }; oneArg(24);",
-            //         vec![
-            //             Object::CompiledFunction {
-            //                 instructions: Instructions::from(vec![
-            //                     Instructions::make(Opcode::GetLocal, vec![0]).unwrap(),
-            //                     Instructions::make(Opcode::ReturnValue, vec![]).unwrap(),
-            //                 ]),
-            //             },
-            //             Object::Integer(24),
-            //         ],
-            //         Instructions::from(vec![
-            //             Instructions::make(Opcode::Constant, vec![0]).unwrap(),
-            //             Instructions::make(Opcode::SetGlobal, vec![0]).unwrap(),
-            //             Instructions::make(Opcode::GetGlobal, vec![0]).unwrap(),
-            //             Instructions::make(Opcode::Constant, vec![1]).unwrap(),
-            //             Instructions::make(Opcode::Call, vec![1]).unwrap(),
-            //             Instructions::make(Opcode::Pop, vec![]).unwrap(),
-            //         ]),
-            //     ),
-            //     (
-            //         "let manyArg = fn(a, b, c) { a; b; c }; manyArg(24, 25, 26);",
-            //         vec![
-            //             Object::CompiledFunction {
-            //                 instructions: Instructions::from(vec![
-            //                     Instructions::make(Opcode::GetLocal, vec![0]).unwrap(),
-            //                     Instructions::make(Opcode::Pop, vec![]).unwrap(),
-            //                     Instructions::make(Opcode::GetLocal, vec![1]).unwrap(),
-            //                     Instructions::make(Opcode::Pop, vec![]).unwrap(),
-            //                     Instructions::make(Opcode::GetLocal, vec![2]).unwrap(),
-            //                     Instructions::make(Opcode::ReturnValue, vec![]).unwrap(),
-            //                 ]),
-            //             },
-            //             Object::Integer(24),
-            //             Object::Integer(25),
-            //             Object::Integer(26),
-            //         ],
-            //         Instructions::from(vec![
-            //             Instructions::make(Opcode::Constant, vec![0]).unwrap(),
-            //             Instructions::make(Opcode::SetGlobal, vec![0]).unwrap(),
-            //             Instructions::make(Opcode::GetGlobal, vec![0]).unwrap(),
-            //             Instructions::make(Opcode::Constant, vec![1]).unwrap(),
-            //             Instructions::make(Opcode::Constant, vec![2]).unwrap(),
-            //             Instructions::make(Opcode::Constant, vec![3]).unwrap(),
-            //             Instructions::make(Opcode::Call, vec![3]).unwrap(),
-            //             Instructions::make(Opcode::Pop, vec![]).unwrap(),
-            //         ]),
-            //     ),
+            (
+                "let oneArg = fn(a) { a }; oneArg(24);",
+                vec![
+                    Object::CompiledFunction {
+                        instructions: Instructions::from(vec![
+                            Instructions::make(Opcode::GetLocal, vec![0]).unwrap(),
+                            Instructions::make(Opcode::ReturnValue, vec![]).unwrap(),
+                        ]),
+                        num_locals: 1,
+                        num_parameters: 1,
+                    },
+                    Object::Integer(24),
+                ],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+                    Instructions::make(Opcode::SetGlobal, vec![0]).unwrap(),
+                    Instructions::make(Opcode::GetGlobal, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![1]).unwrap(),
+                    Instructions::make(Opcode::Call, vec![1]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                ]),
+            ),
+            (
+                "let manyArg = fn(a, b, c) { a; b; c }; manyArg(24, 25, 26);",
+                vec![
+                    Object::CompiledFunction {
+                        instructions: Instructions::from(vec![
+                            Instructions::make(Opcode::GetLocal, vec![0]).unwrap(),
+                            Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                            Instructions::make(Opcode::GetLocal, vec![1]).unwrap(),
+                            Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                            Instructions::make(Opcode::GetLocal, vec![2]).unwrap(),
+                            Instructions::make(Opcode::ReturnValue, vec![]).unwrap(),
+                        ]),
+                        num_locals: 3,
+                        num_parameters: 3,
+                    },
+                    Object::Integer(24),
+                    Object::Integer(25),
+                    Object::Integer(26),
+                ],
+                Instructions::from(vec![
+                    Instructions::make(Opcode::Constant, vec![0]).unwrap(),
+                    Instructions::make(Opcode::SetGlobal, vec![0]).unwrap(),
+                    Instructions::make(Opcode::GetGlobal, vec![0]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![1]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![2]).unwrap(),
+                    Instructions::make(Opcode::Constant, vec![3]).unwrap(),
+                    Instructions::make(Opcode::Call, vec![3]).unwrap(),
+                    Instructions::make(Opcode::Pop, vec![]).unwrap(),
+                ]),
+            ),
         ];
         for (input, expected_constants, expected_instructions) in tests {
             run_compiler_tests(input, expected_constants, expected_instructions);
@@ -1137,6 +1144,7 @@ mod tests {
                             Instructions::make(Opcode::ReturnValue, vec![]).unwrap(),
                         ]),
                         num_locals: 0,
+                        num_parameters: 0,
                     },
                 ],
                 Instructions::from(vec![
@@ -1158,6 +1166,7 @@ mod tests {
                             Instructions::make(Opcode::ReturnValue, vec![]).unwrap(),
                         ]),
                         num_locals: 1,
+                        num_parameters: 0,
                     },
                 ],
                 Instructions::from(vec![
@@ -1182,6 +1191,7 @@ mod tests {
                             Instructions::make(Opcode::ReturnValue, vec![]).unwrap(),
                         ]),
                         num_locals: 2,
+                        num_parameters: 0,
                     },
                 ],
                 Instructions::from(vec![

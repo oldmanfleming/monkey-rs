@@ -158,15 +158,29 @@ impl VirtualMachine {
                     self.execute_index_expression(left, index)?;
                 }
                 Opcode::Call => {
-                    // let num_args = self.current_instructions()?.read_u8()? as usize;
+                    let num_args = self.current_instructions()?.read_u8()? as usize;
                     // We don't pop from the stack here, poping the function will be the job of the return opcodes
-                    match self.stack.last().ok_or(anyhow!("no function found"))? {
+                    match self
+                        .stack
+                        .get(self.stack.len() - 1 - num_args)
+                        .ok_or(anyhow!("no function found"))?
+                    {
                         Object::CompiledFunction {
                             instructions,
                             num_locals,
+                            num_parameters,
                         } => {
-                            let num_locals = num_locals.clone();
-                            let frame = Frame::new(instructions, self.stack.len() - 1);
+                            if num_args != *num_parameters {
+                                bail!(
+                                    "wrong number of arguments: want={}, got={}",
+                                    num_parameters,
+                                    num_args
+                                );
+                            }
+
+                            let num_locals = num_locals.clone() - num_args;
+                            // set base_pointer to just beyond the function that is on the stack
+                            let frame = Frame::new(instructions, self.stack.len() - num_args);
                             self.push_frame(frame);
                             for _ in 0..num_locals {
                                 self.push(NULL);
@@ -178,12 +192,12 @@ impl VirtualMachine {
                 Opcode::ReturnValue => {
                     let return_value = self.pop()?;
                     let frame = self.pop_frame()?;
-                    self.stack.drain(frame.base_pointer..);
+                    self.stack.drain((frame.base_pointer - 1)..);
                     self.push(return_value);
                 }
                 Opcode::Return => {
                     let frame = self.pop_frame()?;
-                    self.stack.drain(frame.base_pointer..);
+                    self.stack.drain((frame.base_pointer - 1)..);
                     self.push(NULL);
                 }
                 Opcode::SetLocal => {
@@ -654,6 +668,77 @@ mod tests {
         for (input, expected) in tests {
             run_vm_tests(input, expected);
         }
+    }
+
+    #[test]
+    fn test_calling_functions_with_arguments_and_bindings() {
+        let tests = vec![
+            (
+                "let identity = fn(a) { a; }; identity(4);",
+                Object::Integer(4),
+            ),
+            (
+                "let sum = fn(a, b) { a + b; }; sum(1, 2);",
+                Object::Integer(3),
+            ),
+            (
+                "let sum = fn(a, b) { let c = a + b; c; }; sum(1, 2);",
+                Object::Integer(3),
+            ),
+            (
+                "let sum = fn(a, b) { let c = a + b; c; }; sum(1, 2) + sum(3, 4);",
+                Object::Integer(10),
+            ),
+            (
+                "let sum = fn(a, b) { let c = a + b; c; }; let outer = fn() { sum(1, 2) + sum(3, 4); }; outer();",
+                Object::Integer(10),
+            ),
+            (
+                "let globalNum = 10; let sum = fn(a, b) { let c = a + b; c + globalNum; }; let outer = fn() { sum(1, 2) + sum(3, 4) + globalNum; }; outer() + globalNum;",
+                Object::Integer(50),
+            ),
+        ];
+
+        for (input, expected) in tests {
+            run_vm_tests(input, expected);
+        }
+    }
+
+    #[test]
+    fn test_calling_functions_with_wrong_arguments() {
+        let tests = vec![
+            (
+                "fn() { 1; }(1);",
+                String::from("wrong number of arguments: want=0, got=1"),
+            ),
+            (
+                "fn(a) { a; }();",
+                String::from("wrong number of arguments: want=1, got=0"),
+            ),
+            (
+                "fn(a, b) { a + b; }(1);",
+                String::from("wrong number of arguments: want=2, got=1"),
+            ),
+        ];
+
+        for (input, expected) in tests {
+            match run_vm_tests_with_result(input) {
+                Ok(_) => panic!("expected error but got result"),
+                Err(err) => assert_eq!(err.to_string(), expected.to_string()),
+            }
+        }
+    }
+
+    fn run_vm_tests_with_result(input: &str) -> Result<Object> {
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program().unwrap();
+
+        let mut compiler = Compiler::new();
+        let bytecode = compiler.compile(program).unwrap();
+
+        let mut vm = VirtualMachine::new();
+        vm.run(bytecode)
     }
 
     fn run_vm_tests(input: &str, expected: Object) {
