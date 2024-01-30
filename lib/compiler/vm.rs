@@ -58,9 +58,10 @@ pub struct VirtualMachine {
     constants: Vec<Object>,
     globals: Vec<Object>,
 
-    stack: Vec<Object>,
+    stack: [Object; STACK_SIZE],
+    stack_pointer: usize,
+
     frames: Vec<Frame>,
-    last_popped_elem: Option<Object>,
 }
 
 impl VirtualMachine {
@@ -68,9 +69,9 @@ impl VirtualMachine {
         Self {
             constants: vec![],
             globals: vec![NULL; GLOBALS_SIZE],
-            stack: Vec::with_capacity(STACK_SIZE),
+            stack: [NULL; STACK_SIZE],
+            stack_pointer: 0,
             frames: vec![],
-            last_popped_elem: None,
         }
     }
 
@@ -88,7 +89,7 @@ impl VirtualMachine {
                         self.current_instructions()?
                             .read_u16::<byteorder::BigEndian>()? as usize;
                     let constant = self.constants[constant_index].clone();
-                    self.push(constant);
+                    self.push(constant)?;
                 }
                 Opcode::Add
                 | Opcode::Sub
@@ -103,10 +104,10 @@ impl VirtualMachine {
                     self.pop()?;
                 }
                 Opcode::True => {
-                    self.push(TRUE);
+                    self.push(TRUE)?;
                 }
                 Opcode::False => {
-                    self.push(FALSE);
+                    self.push(FALSE)?;
                 }
                 Opcode::Minus => {
                     self.execute_minus_operator()?;
@@ -129,7 +130,7 @@ impl VirtualMachine {
                     }
                 }
                 Opcode::Null => {
-                    self.push(NULL);
+                    self.push(NULL)?;
                 }
                 Opcode::SetGlobal => {
                     let global_index =
@@ -142,7 +143,7 @@ impl VirtualMachine {
                         self.current_instructions()?
                             .read_u16::<byteorder::BigEndian>()? as usize;
                     let global = self.globals[global_index].clone();
-                    self.push(global);
+                    self.push(global)?;
                 }
                 Opcode::Array => {
                     let num_elements =
@@ -153,7 +154,7 @@ impl VirtualMachine {
                         elements.push(self.pop()?);
                     }
                     elements.reverse();
-                    self.push(Object::Array(elements));
+                    self.push(Object::Array(elements))?;
                 }
                 Opcode::Hash => {
                     let num_elements =
@@ -168,7 +169,7 @@ impl VirtualMachine {
                         }
                         hash.insert(key, value);
                     }
-                    self.push(Object::Hash(hash));
+                    self.push(Object::Hash(hash))?;
                 }
                 Opcode::Index => {
                     let index = self.pop()?;
@@ -194,17 +195,12 @@ impl VirtualMachine {
                         function: Box::new(compiled_function),
                         free,
                     };
-                    self.push(closure);
+                    self.push(closure)?;
                 }
                 Opcode::Call => {
                     let num_args = self.current_instructions()?.read_u8()? as usize;
                     // We don't pop from the stack here, poping the function will be the job of the return opcodes
-                    match self
-                        .stack
-                        .get(self.stack.len() - 1 - num_args)
-                        .ok_or(anyhow!("no function found"))?
-                        .clone()
-                    {
+                    match self.stack[self.stack_pointer - 1 - num_args].clone() {
                         Object::BuiltInFunction(function) => {
                             let mut args = vec![];
                             for _ in 0..num_args {
@@ -213,7 +209,7 @@ impl VirtualMachine {
                             args.reverse();
                             let result = function(args)?;
                             self.pop()?;
-                            self.push(result);
+                            self.push(result)?;
                         }
                         Object::Closure { function, free } => {
                             let (instructions, num_locals) = match *function {
@@ -233,18 +229,16 @@ impl VirtualMachine {
                                 }
                                 _ => bail!("expected compiled function"),
                             };
-                            let num = num_locals.clone() - num_args;
                             let frame = Frame::new(
                                 &instructions,
-                                self.stack.len() - num_args,
+                                self.stack_pointer - num_args,
                                 free,
-                                num_locals,
+                                num_locals.clone(),
                                 num_args,
                             );
+                            let base_pointer = frame.base_pointer.clone();
                             self.push_frame(frame);
-                            for _ in 0..num {
-                                self.push(NULL);
-                            }
+                            self.stack_pointer = base_pointer + num_locals;
                         }
                         object => bail!("calling non-function: {:?}", object),
                     }
@@ -252,13 +246,13 @@ impl VirtualMachine {
                 Opcode::ReturnValue => {
                     let return_value = self.pop()?;
                     let frame = self.pop_frame()?;
-                    self.stack.drain((frame.base_pointer - 1)..);
-                    self.push(return_value);
+                    self.stack_pointer = frame.base_pointer - 1;
+                    self.push(return_value)?;
                 }
                 Opcode::Return => {
                     let frame = self.pop_frame()?;
-                    self.stack.drain((frame.base_pointer - 1)..);
-                    self.push(NULL);
+                    self.stack_pointer = frame.base_pointer - 1;
+                    self.push(NULL)?;
                 }
                 Opcode::SetLocal => {
                     let local_index = self.current_instructions()?.read_u8()? as usize;
@@ -272,18 +266,18 @@ impl VirtualMachine {
                     let frame = self.frames.last().ok_or(anyhow!("no frame found"))?;
                     let local = frame.base_pointer + local_index;
                     let value = self.stack[local].clone();
-                    self.push(value);
+                    self.push(value)?;
                 }
                 Opcode::GetBuiltin => {
                     let builtin_index = self.current_instructions()?.read_u8()? as usize;
                     let (_, builtin) = BUILTINS[builtin_index].clone();
-                    self.push(builtin);
+                    self.push(builtin)?;
                 }
                 Opcode::GetFree => {
                     let free_index = self.current_instructions()?.read_u8()? as usize;
                     let current_frame = self.frames.last().ok_or(anyhow!("no frame found"))?;
                     let free = current_frame.free[free_index].clone();
-                    self.push(free);
+                    self.push(free)?;
                 }
                 Opcode::CurrentClosure => {
                     let current_frame = self.frames.last().ok_or(anyhow!("no frame found"))?;
@@ -298,15 +292,12 @@ impl VirtualMachine {
                         free: current_frame.free.clone(),
                     };
 
-                    self.push(closure);
+                    self.push(closure)?;
                 }
             }
         }
 
-        Ok(self
-            .last_popped_elem()
-            .ok_or(anyhow!("no stack result"))?
-            .clone())
+        Ok(self.last_popped_elem().clone())
     }
 
     fn current_instructions(&mut self) -> Result<&mut Cursor<Vec<u8>>> {
@@ -325,22 +316,28 @@ impl VirtualMachine {
         self.frames.pop().ok_or(anyhow!("no frame found"))
     }
 
-    fn push(&mut self, object: Object) {
-        self.stack.push(object);
+    fn push(&mut self, object: Object) -> Result<()> {
+        if self.stack_pointer >= STACK_SIZE {
+            bail!("stack overflow");
+        }
+
+        self.stack[self.stack_pointer] = object;
+        self.stack_pointer += 1;
+        Ok(())
     }
 
     fn pop(&mut self) -> Result<Object> {
-        match self.stack.pop() {
-            Some(object) => {
-                self.last_popped_elem = Some(object.clone());
-                Ok(object)
-            }
-            None => bail!("stack is empty"),
+        if self.stack_pointer == 0 {
+            bail!("stack underflow");
         }
+
+        self.stack_pointer -= 1;
+        let object = self.stack[self.stack_pointer].clone();
+        Ok(object)
     }
 
-    fn last_popped_elem(&self) -> Option<&Object> {
-        self.last_popped_elem.as_ref()
+    fn last_popped_elem(&self) -> &Object {
+        &self.stack[self.stack_pointer]
     }
 
     fn execute_index_expression(&mut self, left: Object, index: Object) -> Result<()> {
@@ -348,8 +345,8 @@ impl VirtualMachine {
             (Object::Array(elements), Object::Integer(index)) => {
                 let element = elements.get(index as usize);
                 match element {
-                    Some(value) => self.push(value.clone()),
-                    None => self.push(NULL),
+                    Some(value) => self.push(value.clone())?,
+                    None => self.push(NULL)?,
                 }
             }
             (Object::Hash(pairs), index) => {
@@ -357,8 +354,8 @@ impl VirtualMachine {
                     bail!("unusable as hash key: {}", index);
                 }
                 match pairs.get(&index) {
-                    Some(value) => self.push(value.clone()),
-                    None => self.push(NULL),
+                    Some(value) => self.push(value.clone())?,
+                    None => self.push(NULL)?,
                 }
             }
             (left, _) => bail!("index operator not supported: {:?}", left),
@@ -387,7 +384,7 @@ impl VirtualMachine {
                     Opcode::GreaterThan => self.native_boolean_to_boolean_object(left > right),
                     _ => bail!("unknown integer operator: {:?}", opcode),
                 };
-                self.push(result)
+                self.push(result)?
             }
             (Object::Boolean(left), Object::Boolean(right)) => {
                 let result = match opcode {
@@ -395,7 +392,7 @@ impl VirtualMachine {
                     Opcode::NotEqual => self.native_boolean_to_boolean_object(left != right),
                     _ => bail!("unknown boolean operator: {:?}", opcode),
                 };
-                self.push(result)
+                self.push(result)?
             }
             (Object::String(left), Object::String(right)) => {
                 let result = match opcode {
@@ -404,7 +401,7 @@ impl VirtualMachine {
                     Opcode::NotEqual => self.native_boolean_to_boolean_object(left != right),
                     _ => bail!("unknown string operator: {:?}", opcode),
                 };
-                self.push(result)
+                self.push(result)?
             }
             (left, right) => {
                 bail!(
@@ -437,10 +434,10 @@ impl VirtualMachine {
     fn execute_bang_operator(&mut self) -> Result<()> {
         let operand = self.pop()?;
         match operand {
-            TRUE => self.push(FALSE),
-            FALSE => self.push(TRUE),
-            NULL => self.push(TRUE),
-            _ => self.push(FALSE),
+            TRUE => self.push(FALSE)?,
+            FALSE => self.push(TRUE)?,
+            NULL => self.push(TRUE)?,
+            _ => self.push(FALSE)?,
         };
         Ok(())
     }
@@ -449,7 +446,7 @@ impl VirtualMachine {
         let operand = self.pop()?;
         Ok(match operand {
             Object::Integer(value) => {
-                self.push(Object::Integer(-value));
+                self.push(Object::Integer(-value))?;
             }
             _ => bail!("unsupported type for negation: {:?}", operand),
         })
@@ -998,7 +995,7 @@ mod tests {
         let mut vm = VirtualMachine::new();
         vm.run(bytecode).unwrap();
 
-        test_expected_object(&expected, vm.last_popped_elem().unwrap());
+        test_expected_object(&expected, vm.last_popped_elem());
     }
 
     fn test_expected_object(expected: &Object, actual: &Object) {
