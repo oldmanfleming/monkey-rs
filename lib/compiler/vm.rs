@@ -205,33 +205,6 @@ impl VirtualMachine {
                         .ok_or(anyhow!("no function found"))?
                         .clone()
                     {
-                        Object::CompiledFunction {
-                            instructions,
-                            num_locals,
-                            num_parameters,
-                        } => {
-                            if num_args != num_parameters {
-                                bail!(
-                                    "wrong number of arguments: want={}, got={}",
-                                    num_parameters,
-                                    num_args
-                                );
-                            }
-
-                            let num = num_locals.clone() - num_args;
-                            // set base_pointer to just beyond the function that is on the stack
-                            let frame = Frame::new(
-                                &instructions,
-                                self.stack.len() - num_args,
-                                vec![],
-                                num_locals,
-                                num_args,
-                            );
-                            self.push_frame(frame);
-                            for _ in 0..num {
-                                self.push(NULL);
-                            }
-                        }
                         Object::BuiltInFunction(function) => {
                             let mut args = vec![];
                             for _ in 0..num_args {
