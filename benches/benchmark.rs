@@ -14,7 +14,7 @@ let fibonacci = fn(x) {
   }
 };
 
-fibonacci(10);
+fibonacci(20);
 "#;
 
 fn fib_benchmark(c: &mut Criterion) {
@@ -26,10 +26,10 @@ fn fib_benchmark(c: &mut Criterion) {
     });
 
     c.bench_function("compiler", |b| {
-      b.iter(|| {
-          let mut engine = new_compiler();
-          engine.run(&black_box(INPUT)).unwrap();
-      })
+        b.iter(|| {
+            let mut engine = new_compiler();
+            engine.run(&black_box(INPUT)).unwrap();
+        })
     });
 }
 
