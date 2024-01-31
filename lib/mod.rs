@@ -1,5 +1,3 @@
-#![feature(cursor_remaining)]
-
 mod ast;
 mod compiler;
 mod engine;

@@ -81,7 +81,9 @@ impl VirtualMachine {
         self.frames.push(main_frame);
         self.constants = bytecode.constants;
 
-        while !self.current_instructions()?.is_empty() {
+        while self.current_instructions()?.position()
+            < ((self.current_instructions()?.get_ref().len()) as u64)
+        {
             let opcode = Opcode::try_from(self.current_instructions()?.read_u8()?)?;
             match opcode {
                 Opcode::Constant => {

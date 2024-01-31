@@ -64,7 +64,7 @@ impl fmt::Display for Instructions {
     /// TODO: handle errors instead of unwraping
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut instructions = Cursor::new(&self.0);
-        while !instructions.is_empty() {
+        while instructions.position() < ((instructions.get_ref().len()) as u64) {
             write!(f, "{:04} ", instructions.position())?;
             let instruction = Opcode::try_from(instructions.read_u8().unwrap()).unwrap();
             write!(f, "{}", instruction.name())?;
